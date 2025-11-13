@@ -1,7 +1,7 @@
 [project]
 name = "rcps-og"
 version = "0.1.0"
-description = "Add your description here"
+description = "Adapting methods for risk controlled prediction sets for grounding free text to biomedical ontologies."
 readme = "README.md"
 requires-python = "==3.10"
 dependencies = [
