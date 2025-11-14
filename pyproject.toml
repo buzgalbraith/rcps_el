@@ -8,6 +8,7 @@ dependencies = [
     "black>=25.11.0",
     "gilda>=1.4.1",
     "indra>=1.24.0",
+    "ipdb>=0.13.13",
     "polars>=1.35.2",
     "pyobo>=0.12.12",
     "rapidfuzz>=3.14.3",

@@ -53,6 +53,7 @@ def extract_dataset(jsn: dict) -> list:
                         "db": db,
                         "identifier": identifier,
                         "normalized_name": db_name,
+                        "document_id": document.get("id", "id_missing"),
                     }
                 )
     return records
