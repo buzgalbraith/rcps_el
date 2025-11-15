@@ -12,8 +12,16 @@ def binary_miscoverage_loss(entity: dict, candidate: dict) -> float:
     Returns:
         loss (float): Loss value
     """
-    label = entity.get("normalized_name", None)
-    candidate_set = [x.get("entry_name", "") for x in candidate]
+    label = (
+        entity.get("normalized_name", "").lower()
+        if entity.get("normalized_name", "") is not None
+        else ""
+    )
+    candidate_set = [
+        x.get("entry_name", "").lower()
+        for x in candidate
+        if x.get("entry_name", "") is not None
+    ]
     return float(label not in candidate_set)
 
 
