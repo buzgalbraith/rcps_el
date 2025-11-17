@@ -15,7 +15,7 @@ import numpy as np
 
 
 if __name__ == "__main__":
-    alpha = 0.55
+    alpha = 0.78
     q_range = [0, 1.0, 100]  # [min q val, max q val, # to search between]
     merge_score = (
         lambda entity, candidate: (
@@ -23,11 +23,12 @@ if __name__ == "__main__":
         )
         / 2
     )
-    score_func = fuzzy_string_score
+    score_func = merge_score
     loss_func = binary_miscoverage_loss
-    candidate_cutoff = 3  # min number of candidates to consider
+    candidate_cutoff = 1  # min number of candidates to consider
     ## run
-    calibration_df, validation_df = load_calibration_and_validation()
+    calibration_df, validation_df = load_calibration_and_validation(validate_prop=0.2)
+    # calibration_df =
 
     index_to_candidates_map = get_gilda_predictions(calibration_df=calibration_df)
 
@@ -87,3 +88,7 @@ if __name__ == "__main__":
         suffix="_gilda",
     )
     print(merged_loss.mean())
+    merged_loss.filter(
+        pl.col("binary_miscoverage_loss").eq(1)
+        & pl.col("binary_miscoverage_loss_gilda").eq(0)
+    )

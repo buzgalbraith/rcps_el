@@ -8,13 +8,13 @@ from typing import Tuple, Callable
 import gilda
 
 
-def load_calibration_and_validation() -> Tuple[pl.DataFrame, pl.DataFrame]:
+def load_calibration_and_validation(
+    validate_prop: float = 0.2,
+) -> Tuple[pl.DataFrame, pl.DataFrame]:
     """Reads in the calibration DF and splits it based on document id to prevent contamination"""
-    calibration_df = pl.read_csv(CALIBRATION_DATA_PATH, separator="\t").filter(
-        pl.col("db").eq("mesh")
-    )
+    calibration_df = pl.read_csv(CALIBRATION_DATA_PATH, separator="\t")
     documents = calibration_df.select("document_id").unique()
-    validate_size = int(0.2 * len(documents))
+    validate_size = int(validate_prop * len(documents))
     validation_document_ids, calibration_document_ids = documents.head(
         validate_size
     ), documents.tail(-validate_size)
@@ -28,6 +28,15 @@ def load_calibration_and_validation() -> Tuple[pl.DataFrame, pl.DataFrame]:
             calibration_document_ids.to_numpy().flatten().tolist()
         )
     ).with_row_index()
+    ## testing
+    calibration_df = pl.read_csv(
+        "/Users/buzgalbraith/.data/BioRED/phenotype_train.tsv", separator="\t"
+    )
+    validate_size = int(validate_prop * len(calibration_df))
+    validation_df, calibration_df = (
+        calibration_df.head(validate_size).with_row_index(),
+        calibration_df.tail(-validate_size).with_row_index(),
+    )
     return calibration_df.sort(by="index"), validation_df.sort(by="index")
 
 
@@ -96,6 +105,7 @@ def evaluate_on_calibration_data(
                     "sample_index": sample_idx,
                     "entity_raw_text": row["entity_raw_text"],
                     "entry_name": candidate["entry_name"],
+                    "db": row["db"],
                     score_function.__name__: score_function(
                         entity=row, candidate=candidate
                     ),
@@ -103,7 +113,8 @@ def evaluate_on_calibration_data(
             )
         scores += local_scores
         ## weight threshold depending on the size of the candidate set
-        q_star = adaptive_q(n_candidates=len(candidate_terms), base_q=q)
+        # q_star = adaptive_q(n_candidates=len(candidate_terms), base_q=q)
+        q_star = q
         ## check the loss for the candidate set.
         candidate_set = [
             x
@@ -117,6 +128,7 @@ def evaluate_on_calibration_data(
                 "entity_raw_text": row.get("entity_raw_text", None),
                 "entity_label": row.get("normalized_name", None),
                 "candidates": candidate_names,
+                "db": row["db"],
                 "n_candidates": len(candidate_set),
                 "n_total_candidates": len(candidate_terms),
                 loss_function.__name__: loss_function(
