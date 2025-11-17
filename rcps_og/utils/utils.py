@@ -28,15 +28,6 @@ def load_calibration_and_validation(
             calibration_document_ids.to_numpy().flatten().tolist()
         )
     ).with_row_index()
-    ## testing
-    calibration_df = pl.read_csv(
-        "/Users/buzgalbraith/.data/BioRED/phenotype_train.tsv", separator="\t"
-    )
-    validate_size = int(validate_prop * len(calibration_df))
-    validation_df, calibration_df = (
-        calibration_df.head(validate_size).with_row_index(),
-        calibration_df.tail(-validate_size).with_row_index(),
-    )
     return calibration_df.sort(by="index"), validation_df.sort(by="index")
 
 

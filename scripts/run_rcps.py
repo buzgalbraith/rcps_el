@@ -15,7 +15,7 @@ import numpy as np
 
 
 if __name__ == "__main__":
-    alpha = 0.78
+    alpha = 0.40
     q_range = [0, 1.0, 100]  # [min q val, max q val, # to search between]
     merge_score = (
         lambda entity, candidate: (
