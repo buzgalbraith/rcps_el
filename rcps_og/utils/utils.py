@@ -77,58 +77,96 @@ def calc_empirical_risk(loss_df: pl.DataFrame, loss_name: str):
     return loss_df.select(pl.mean(loss_name)).item()
 
 
+def get_loss_df(
+    score_df, score_function, q, loss_function, above_i_calibration_data
+) -> pl.DataFrame:
+    ## filter out scores bellow threshold
+    scores_over_threshold = score_df.filter(pl.col(score_function.__name__) >= q)
+    ## do some
+    label_candidate_df = scores_over_threshold.group_by("index").agg(
+        [
+            pl.col("normalized_name").first().alias("normalized_name"),
+            pl.col("entry_name").unique().alias("candidates"),
+        ]
+    )
+    losses = label_candidate_df.with_columns(
+        pl.struct(["normalized_name", "candidates"])
+        .map_elements(
+            return_dtype=pl.Float64,
+            function=lambda x: loss_function(
+                x.get("normalized_name"), x.get("candidates")
+            ),
+            skip_nulls=True,
+        )
+        .alias(loss_function.__name__),
+        n_candidates=pl.col("candidates").list.len(),
+    )
+    total_candidates = score_df.group_by("index").len("n_total_candidates")
+    return (
+        above_i_calibration_data.join(
+            losses.drop("normalized_name"), on="index", how="left", validate="1:m"
+        )
+        .with_columns(
+            [
+                pl.col("n_candidates").fill_null(0),
+                pl.col(loss_function.__name__).fill_null(1),
+            ]
+        )
+        .join(total_candidates, on="index", validate="1:m")
+    )
+
+
+def get_candidates_df(index_to_candidates_map: dict) -> pl.DataFrame:
+    """process a candidates dictionary to a polars data frame"""
+    records = []
+    for sample_idx in index_to_candidates_map:
+        entry = index_to_candidates_map[sample_idx]
+        for record in entry:
+            record.update({"index": sample_idx})
+            records.append(record)
+    return pl.from_dicts(records)
+
+
 def evaluate_on_calibration_data(
     q: float,
     above_i_calibration_data: pl.DataFrame,
     index_to_candidates_map: dict,
     loss_function: Callable,
     score_function: Callable,
+    processing_function: Callable = None,
 ):
-    scores = []
-    losses = []
-    for row in above_i_calibration_data.iter_rows(named=True):
-        sample_idx = row["index"]
-        candidate_terms = index_to_candidates_map[sample_idx]
-        local_scores = []
-        for candidate in candidate_terms:
-            local_scores.append(
-                {
-                    "sample_index": sample_idx,
-                    "entity_raw_text": row["entity_raw_text"],
-                    "entry_name": candidate["entry_name"],
-                    "db": row["db"],
-                    score_function.__name__: score_function(
-                        entity=row, candidate=candidate
-                    ),
-                }
-            )
-        scores += local_scores
-        ## weight threshold depending on the size of the candidate set
-        # q_star = adaptive_q(n_candidates=len(candidate_terms), base_q=q)
-        q_star = q
-        ## check the loss for the candidate set.
-        candidate_set = [
-            x
-            for x, y in zip(candidate_terms, local_scores)
-            if y[score_function.__name__] >= q_star
-        ]
-        candidate_names = [x.get("entry_name", "") for x in candidate_set]
-        losses.append(
-            {
-                "sample_index": sample_idx,
-                "entity_raw_text": row.get("entity_raw_text", None),
-                "entity_label": row.get("normalized_name", None),
-                "candidates": candidate_names,
-                "db": row["db"],
-                "n_candidates": len(candidate_set),
-                "n_total_candidates": len(candidate_terms),
-                loss_function.__name__: loss_function(
-                    entity=row, candidate=candidate_set
+    raw_text_col = "entity_raw_text"
+    entity_name_col = "entry_name"
+    ## index to candidate map to dataframe
+    candidate_df = above_i_calibration_data.join(
+        get_candidates_df(index_to_candidates_map=index_to_candidates_map), on="index"
+    )
+    ## if score function requires additional processing run that here
+    if processing_function is not None:
+        candidate_df, raw_text_col, entity_name_col = processing_function(candidate_df)
+    ## apply score function to df
+    if score_function.__name__ != "gilda_score":
+        score_df = candidate_df.with_columns(
+            pl.struct([raw_text_col, entity_name_col])
+            .map_elements(
+                return_dtype=pl.Float64,
+                function=lambda x: score_function(
+                    entity=x.get(raw_text_col), candidate=x.get(entity_name_col)
                 ),
-            }
+            )
+            .alias(score_function.__name__)
         )
-    score_df = pl.from_records(scores)
-    loss_df = pl.from_records(losses)
+    else:  ## gilda scores computed in step 1
+        score_df = candidate_df
+    ## get losses df
+    loss_df = get_loss_df(
+        score_df=score_df,
+        score_function=score_function,
+        q=q,
+        loss_function=loss_function,
+        above_i_calibration_data=above_i_calibration_data,
+    )
+    ## calculate empirical risk
     empirical_risk = calc_empirical_risk(
         loss_df=loss_df, loss_name=loss_function.__name__
     )
@@ -140,6 +178,7 @@ def calibration_evaluation_generator(
     index_to_candidates_map: dict,
     loss_function: Callable,
     score_function: Callable,
+    processing_function: Callable = None,
 ):
     return lambda q: evaluate_on_calibration_data(
         q=q,
@@ -147,6 +186,7 @@ def calibration_evaluation_generator(
         index_to_candidates_map=index_to_candidates_map,
         loss_function=loss_function,
         score_function=score_function,
+        processing_function=processing_function,
     )
 
 

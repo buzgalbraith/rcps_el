@@ -1,5 +1,10 @@
 from rcps_og.utils.constants import CALIBRATION_DATA_PATH
-from rcps_og.utils.scores import gilda_score, fuzzy_string_score
+from rcps_og.utils.scores import (
+    gilda_score,
+    fuzzy_string_score,
+    sapBert_score,
+    get_Sapbert_embeddings,
+)
 from rcps_og.utils.losses import (
     binary_miscoverage_loss,
 )
@@ -15,17 +20,20 @@ import numpy as np
 
 
 if __name__ == "__main__":
-    alpha = 0.40
-    q_range = [0, 1.0, 100]  # [min q val, max q val, # to search between]
+    alpha = 0.55
+    num_steps = 100  # 100
+    max_val = 1.0  # 1.0
+    q_range = [0, max_val, num_steps]  # [min q val, max q val, # to search between]
     merge_score = (
         lambda entity, candidate: (
             fuzzy_string_score(entity, candidate) + gilda_score(entity, candidate)
         )
         / 2
     )
-    score_func = merge_score
+    score_func = sapBert_score
     loss_func = binary_miscoverage_loss
-    candidate_cutoff = 1  # min number of candidates to consider
+    processing_function = get_Sapbert_embeddings
+    candidate_cutoff = 4  # min number of candidates to consider
     ## run
     calibration_df, validation_df = load_calibration_and_validation(validate_prop=0.2)
     # calibration_df =
@@ -46,6 +54,7 @@ if __name__ == "__main__":
         index_to_candidates_map=index_to_candidates_map,
         loss_function=loss_func,
         score_function=score_func,
+        processing_function=processing_function,
     )
     ##  raise q -> smaller set. so walk from most to least strict sets
     for q in sorted(
@@ -56,7 +65,6 @@ if __name__ == "__main__":
         print(empirical_risk, candidates, q)
         if empirical_risk <= alpha:
             break
-
     ## evaluate on validation dataset
     validation_index_to_candidates_map = get_gilda_predictions(
         calibration_df=validation_df
@@ -75,6 +83,7 @@ if __name__ == "__main__":
         index_to_candidates_map=validation_index_to_candidates_map,
         loss_function=loss_func,
         score_function=score_func,
+        processing_function=processing_function,
     )
     ## evaluate with risk control
     score_df, loss_df, empirical_risk = validation_evaluator(q=q)
@@ -83,12 +92,23 @@ if __name__ == "__main__":
 
     ## merge
     merged_loss = loss_df.join(
-        loss_df_orig_gilda.select([loss_func.__name__, "sample_index"]),
-        on=pl.col("sample_index"),
-        suffix="_gilda",
+        loss_df_orig_gilda.select([loss_func.__name__, "index"]),
+        on=pl.col("index"),
+        suffix="_gilda_original",
     )
     print(merged_loss.mean())
     merged_loss.filter(
         pl.col("binary_miscoverage_loss").eq(1)
-        & pl.col("binary_miscoverage_loss_gilda").eq(0)
+        & pl.col("binary_miscoverage_loss_gilda_original").eq(0)
+    )
+    merged_loss.group_by(pl.col("normalized_name")).first()  #
+
+    merged_what = (
+        merged_loss.join(above_i_validation_data, on="index")
+        .filter(
+            pl.col("binary_miscoverage_loss").eq(1)
+            & pl.col("binary_miscoverage_loss_gilda_original").eq(0)
+        )
+        .group_by("entity_raw_text")
+        .first()
     )
