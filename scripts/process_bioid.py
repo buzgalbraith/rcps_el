@@ -20,34 +20,103 @@ MODULE = pystow.module("gilda", "biocreative")
 URL = "https://github.com/buzgalbraith/BioCreative-VI-Track-1/raw/refs/heads/main/data/BioIDtraining_2.tar.gz"  # used to be ('https://biocreative.bioinformatics.udel.edu/media/store/files/2017/BioIDtraining_2.tar.gz')
 BIOID_PATH = "~/.data/BioIDtraining_2/gilda_dataset.tsv"
 
+import polars as pl 
+import pystow
+from functools import lru_cache
+from lxml import etree
+import gilda
+from rapidfuzz import fuzz
+from typing import Callable
 
-def get_gilda_terms_df(use_synonyms: bool = True) -> pl.DataFrame:
-    gilda_compressed_terms_path = (
-        "/Users/buzgalbraith/.data/gilda/1.4.1/grounding_terms.tsv.gz"
+
+MODULE = pystow.module("gilda", "biocreative")
+URL = "https://github.com/buzgalbraith/BioCreative-VI-Track-1/raw/refs/heads/main/data/BioIDtraining_2.tar.gz"  # used to be ('https://biocreative.bioinformatics.udel.edu/media/store/files/2017/BioIDtraining_2.tar.gz')
+BIOID_PATH = "~/.data/BioIDtraining_2/gilda_dataset.tsv"
+
+
+def safe_max_score(scores:list[float]|list[None])->float:
+    if len(scores) > 0:
+        return max(scores)
+    else:
+        ## if there is no list
+        return 0.0
+def safe_min_loss(scores:list[float]|list[None])->float:
+    if len(scores) > 0:
+        return min(scores)
+    else:
+        ## if there is no list
+        return 1.0
+
+
+def fuzzy_string_score_list(entity: str, candidate_names: list[str], agg_method:Callable[[list[float]], float]=safe_max_score) -> float:
+    """
+    fuzzy string match a list of candidate names against a entity text. Aggregate scores with a function
+    """
+    scores = []
+    for candidate_name in candidate_names:
+        score = fuzz.ratio(entity, candidate_name) / 100
+        scores.append(score)
+    return agg_method(scores)
+
+def binary_miscoverage_loss_list(labels: list[str], candidate_set: list[str], agg_method:Callable[[list[float]], float]=safe_min_loss) -> float:
+    """
+
+    """
+    term_losses = [float(candidate not in labels) for candidate in candidate_set]
+    return agg_method(term_losses)
+
+
+@lru_cache(maxsize=None)
+def get_plaintext(don_article: str) -> str:
+    """Get plaintext content from XML file in BioID corpus
+
+    Parameters
+    ----------
+    don_article :
+        Identifier for paper used within corpus.
+
+    Returns
+    -------
+    :
+        Plaintext of specified article
+    """
+    directory = MODULE.ensure_untar(url=URL, directory='BioIDtraining_2')
+    path = directory.joinpath('BioIDtraining_2', 'fulltext_bioc',
+                                f'{don_article}.xml')
+    tree = etree.parse(path.as_posix())
+    paragraphs = tree.xpath('//text')
+    paragraphs = [' '.join(text.itertext()) for text in paragraphs]
+    return '/n'.join(paragraphs) + '/n'
+
+from typing import TypedDict
+class mini_gilda_match(TypedDict):
+    name: str
+    curie: str
+    score: float
+
+
+
+
+
+def get_gilda_candidates(text:str, context:str|None)->list[mini_gilda_match]:
+    matches = gilda.ground(
+        text = text, 
+        context=context
     )
-    gilda_terms_path = "/Users/buzgalbraith/.data/gilda/1.4.1/grounding_terms.tsv"
-    if not os.path.exists(gilda_terms_path):
-        cmd = ["gunzip", "-k", gilda_compressed_terms_path]
-        subprocess.run(cmd)
-    ungrouped_gilda_terms_df = pl.read_csv(gilda_terms_path, separator="\t")
-    ## I think synonyms are required since there are some terms that are mapped to multiple mesh terms.
-    if not use_synonyms:
-        return (
-            ungrouped_gilda_terms_df.filter(
-                pl.col("status").eq("name")  ## get only actual names
-            )
-            .group_by(["db", "id"])
-            .first()
-            .with_columns(curie=pl.col("db") + ":" + pl.col("id"))
-            .select(["curie", "norm_text"])
+    records = []
+    for match in matches:
+        records.append(
+            {
+                'name' : match.term.entry_name, 
+                'curie' : f"{match.term.db}:{match.term.id}",
+                "score" : match.score
+            }
         )
-    # using synonyms
-    return (
-        ungrouped_gilda_terms_df.group_by(["db", "id"])
-        .agg(pl.col("norm_text"))
-        .with_columns(curie=pl.col("db") + ":" + pl.col("id"))
-        .select(["curie", "norm_text"])
-    )
+    return records
+def get_gilda_candidates_bioid(text:str, don_article:str)->list[mini_gilda_match]:
+    context = get_plaintext(don_article)
+    return get_gilda_candidates(text=text, context=context)
+
 
 
 def split_calibration_and_validation(
@@ -73,123 +142,57 @@ def split_calibration_and_validation(
     return calibration_df.sort(by="index"), validation_df.sort(by="index")
 
 
-@lru_cache(maxsize=None)
-def get_bioid_plaintext(don_article: str) -> str:
-    """Get plaintext content from XML file in BioID corpus
-
-    Parameters
-    ----------
-    don_article :
-        Identifier for paper used within corpus.
-
-    Returns
-    -------
-    :
-        Plaintext of specified article
-    """
-    directory = MODULE.ensure_untar(url=URL, directory="BioIDtraining_2")
-    path = directory.joinpath("BioIDtraining_2", "fulltext_bioc", f"{don_article}.xml")
-    tree = etree.parse(path.as_posix())
-    paragraphs = tree.xpath("//text")
-    paragraphs = [" ".join(text.itertext()) for text in paragraphs]
-    return "/n".join(paragraphs) + "/n"
-
-
-def get_bioid_df():
-    return (
-        pl.read_csv(BIOID_PATH, separator="\t")
-        .with_columns(
-            pl.col("obj_synonyms")
-            .str.strip_prefix("{")
-            .str.strip_suffix("}")
-            .str.split(",")
-        )
-        .with_columns(
-            pl.col("obj_synonyms").list.eval(pl.element().str.strip_chars("'' "))
-        )
-        .with_columns(
-            full_text=pl.col("don_article").map_elements(
-                get_bioid_plaintext, return_dtype=pl.String
-            ),
-        )
-        .rename(
-            {
-                "don_article": "document_id",
-                "text": "entity_raw_text",
-            }
-        )
-        .with_row_index()
-    )
-
-
-def expand_gilda_names(bioid: pl.DataFrame, gilda_terms) -> pl.DataFrame:
-    boom = bioid.explode("obj_synonyms")
-    bam = boom.join(
-        gilda_terms,
-        left_on=pl.col("obj_synonyms"),
-        right_on=pl.col("curie"),
-        how="left",
-        validate="m:1",
-    )
-    pow = bam.group_by("index", maintain_order=True).agg(
-        pl.col("norm_text").flatten().drop_nulls().unique()
-    )
-    processed_df = bioid.join(pow, on="index", how="inner", validate="1:1")
-    processed_df.drop_in_place("index")
-    return processed_df
-
 
 if __name__ == "__main__":
-    ## load the df and do some initial processing
-    bioid_df = get_bioid_df()
-    gilda_terms_df = get_gilda_terms_df()
-    processed_df = expand_gilda_names(bioid=bioid_df, gilda_terms=gilda_terms_df)
-    calibration_df, validation_df = split_calibration_and_validation(
-        base_df=processed_df,
-        split_col="document_id",
+
+    original_bio_df = pl.read_csv(BIOID_PATH, separator="\t").with_columns(
+        pl.col("obj_synonyms")
+        .str.strip_prefix("{")
+        .str.strip_suffix("}")
+        .str.split(",")
+    ).with_columns(
+        pl.col("obj_synonyms").list.eval(pl.element().str.strip_chars("'' "))
     )
-    # ## TODO: there are still some terms that have no like normalized texts, so we need to ave another method to get names here.
-    missing = processed_df.filter(pl.col("norm_text").list.len() < 1)
-    ## TODO: this has a grounding, why no name?
-    missing[0]["groundings"]
-    import gilda
+    bio_id_df = original_bio_df.sample(100)
+    print(len(bio_id_df))
 
-    gilda.get_names("MESH", "D018891")
-
-    alpha = 0.55
-    num_steps = 100  # 100
-    max_val = 1.0  # 1.0
-    q_range = [0, max_val, num_steps]  # [min q val, max q val, # to search between]
-
-    # score_func = sapBert_score
-    # loss_func = binary_miscoverage_loss
-    # processing_function = get_Sapbert_embeddings
-    # candidate_cutoff = 4  # min number of candidates to consider
-
-    # index_to_candidates_map = get_gilda_predictions(calibration_df=calibration_df)
-
-    # no_hits, one_hits, above_i = get_gilda_prediction_stats(
-    #     index_to_candidates_map=index_to_candidates_map,
-    #     candidate_cutoff=candidate_cutoff,
-    # )
-    # # After filtering
-    # above_i_calibration_data = filter_calibration_data(
-    #     calibration_df=calibration_df, above_i=above_i
-    # )
-    # # get a function to evaluate the calibration set as a function of q only.
-    # calibration_evaluator = calibration_evaluation_generator(
-    #     above_i_calibration_data=above_i_calibration_data,
-    #     index_to_candidates_map=index_to_candidates_map,
-    #     loss_function=loss_func,
-    #     score_function=score_func,
-    #     processing_function=processing_function,
-    # )
-    # ##  raise q -> smaller set. so walk from most to least strict sets
-    # for q in sorted(
-    #     np.linspace(start=q_range[0], stop=q_range[1], num=q_range[2]), reverse=True
-    # ):
-    #     _, loss_df, empirical_risk = calibration_evaluator(q=q)
-    #     candidates = loss_df.select(pl.mean("n_candidates")).item()
-    #     print(empirical_risk, candidates, q)
-    #     if empirical_risk <= alpha:
-    #         break
+    # # here we are assuming that this will always hold
+    bio_id_df = bio_id_df.with_columns(
+        gilda_matches = pl.struct(["text", "don_article"]).map_elements(
+        lambda x: get_gilda_candidates_bioid(x["text"], x["don_article"]),
+        return_dtype=pl.List(pl.Struct({
+            "name": pl.String,
+            "curie": pl.String,
+            "score": pl.Float64,
+        })),
+        )
+        ).with_columns(
+            gilda_names=pl.col("gilda_matches").list.eval(pl.element().struct.field("name")),
+            gilda_curie=pl.col("gilda_matches").list.eval(pl.element().struct.field("curie")),
+            gilda_scores=pl.col("gilda_matches").list.eval(pl.element().struct.field("score")),
+        )
+    bio_id_df = bio_id_df.with_columns(
+        score = pl.struct(['text', 'gilda_names']).map_elements(
+            lambda x: fuzzy_string_score_list(x['text'], x['gilda_names'], agg_method=safe_max_score), 
+            return_dtype=pl.Float64
+        )
+    )
+    bio_id_df = bio_id_df.with_columns(
+        loss = pl.struct(['obj_synonyms', 'gilda_curie']).map_elements(
+            lambda x: binary_miscoverage_loss_list(x['obj_synonyms'], x['gilda_curie'], agg_method=safe_min_loss), 
+            return_dtype=pl.Float64
+        )
+    )
+    ## there are still cases where gilda is getting mappings that we are not using a custom grounder ##
+    bio_id_df = bio_id_df.with_columns(
+        numeric_exists = pl.col('exists_correct').cast(dtype=pl.Float64),
+    )
+    bio_id_df.filter(pl.col('numeric_exists').eq(pl.col('loss'))).select(
+        [
+            'obj_synonyms',
+            'groundings',
+            'gilda_curie', 
+            'numeric_exists',
+            'loss'
+        ]
+    )
