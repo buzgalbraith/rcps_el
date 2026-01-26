@@ -1,1 +1,2 @@
 from .rcpsOGEvaluator import rcpsOGEvaluator
+from .rcpsOGSetEvaluator import rcpsOGSetEvaluator

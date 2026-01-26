@@ -16,6 +16,8 @@ logger = logging.getLogger(__name__)
 
 
 class rcpsOGEvaluator:
+    results_summary: list[dict] = []
+
     def __init__(
         self,
         dataset: Dataset,
@@ -88,6 +90,57 @@ class rcpsOGEvaluator:
     def get_results_summary(self):
         assert isinstance(self.result_calibration_fitted, pl.DataFrame) and isinstance(
             self.result_validation_fitted, pl.DataFrame
+        )
+        self.results_summary: list[dict] = []  ## reset just in case
+        ## get calibration results
+        self.results_summary.append(
+            {
+                "dataset": self.dataset.name,
+                "split": "calibration",
+                "target_proportional_risk_increase": self.target_proportional_risk_increase,
+                "min_candidates": self.min_candidates,
+                "evaluation_strategy": "absolute" if self.absolute_risk else "relative",
+                "score_function": self.score_function.name,
+                "loss_function": self.loss_function.name,
+                "samples": len(self.calibration_risk_index),
+                "risk_original": self.calc_empirical_risk(
+                    self.result_calibration_original, calibration=True
+                ),
+                "risk_controlled": self.calc_empirical_risk(
+                    self.result_calibration_fitted, calibration=True
+                ),
+                "c_set_size_original": self.get_average_candidates(
+                    self.result_calibration_original, calibration=True
+                ),
+                "c_set_size_controlled": self.get_average_candidates(
+                    self.result_calibration_fitted, calibration=True
+                ),
+            }
+        )
+        ## get validation results
+        self.results_summary.append(
+            {
+                "dataset": self.dataset.name,
+                "split": "validation",
+                "target_proportional_risk_increase": self.target_proportional_risk_increase,
+                "min_candidates": self.min_candidates,
+                "evaluation_strategy": "absolute" if self.absolute_risk else "relative",
+                "score_function": self.score_function.name,
+                "loss_function": self.loss_function.name,
+                "samples": len(self.validation_risk_index),
+                "risk_original": self.calc_empirical_risk(
+                    self.result_validation_original, calibration=False
+                ),
+                "risk_controlled": self.calc_empirical_risk(
+                    self.result_validation_fitted, calibration=False
+                ),
+                "c_set_size_original": self.get_average_candidates(
+                    self.result_validation_original, calibration=False
+                ),
+                "c_set_size_controlled": self.get_average_candidates(
+                    self.result_validation_fitted, calibration=False
+                ),
+            }
         )
         logger.info(f"Calibration samples {len(self.result_calibration_original)}")
         if not self.absolute_risk:
