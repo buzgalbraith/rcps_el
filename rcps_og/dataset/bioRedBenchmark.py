@@ -6,11 +6,43 @@ from .dataset import Dataset, pl, Path
 from rcps_og.utils import safeMatch
 from bioregistry import normalize_curie
 import gilda
+from indra.databases import hgnc_client, mesh_client
 from rcps_og.utils.constants import BIORED_DIR
 import os
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def get_equivalent_curies(curie):
+    """Get all equivalent CURIEs for an entity"""
+    # Could use PyOBO, BioThings, or INDRA's built-in mappings
+    prefix, identifier = curie.split(":")
+
+    equivalents = set([curie])
+
+    # Example: for HGNC, get NCBI Gene xrefs
+    if prefix == "hgnc":
+        gene_id = hgnc_client.get_entrez_id(identifier)
+        # print(f'gene_id {gene_id}')
+        if gene_id:
+            equivalents.add(f"ncbigene:{gene_id}")
+    elif prefix == "ncbigene":
+        gene_id = hgnc_client.get_hgnc_from_entrez(identifier)
+        # print(f'gene_id {gene_id}')
+        if gene_id:
+            equivalents.add(f"hgnc:{gene_id}")
+    elif prefix == "mesh":
+        # mesh_id = mesh_client.get_mesh_id_from_db_id(db_ns='chebi', db_id='37684')
+        # print(curie)
+        res = mesh_client.get_db_mapping(identifier)
+        if res:
+            a, b = res
+            res_2 = normalize_curie(f"{a}:{b}")
+            equivalents.add(res_2)
+    # else:
+    #     res = mesh_client.get_mesh_id_from_db_id(db_ns='ncbigene', db_id='50489')
+    return list(equivalents)
 
 
 class bioRedBenchmark(Dataset):
@@ -33,13 +65,24 @@ class bioRedBenchmark(Dataset):
         matches = gilda.ground(text=text, context=context)
         records = []
         for match in matches:
+            curie = normalize_curie(f"{match.term.db}:{match.term.id}")
             records.append(
                 {
                     "name": match.term.entry_name,
-                    "curie": normalize_curie(f"{match.term.db}:{match.term.id}"),
+                    "curie": curie,
                     "score": match.score,
                 }
             )
+            equivalences = get_equivalent_curies(curie)
+            if equivalences:
+                for eqc in equivalences:
+                    records.append(
+                        {
+                            "name": match.term.entry_name,
+                            "curie": eqc,
+                            "score": match.score,
+                        }
+                    )
         return records
 
     def preprocess_dataset(
@@ -85,5 +128,11 @@ class bioRedBenchmark(Dataset):
             )
             .rename({"entity_raw_text": "text"})
         )
+        df = df.with_columns(pl.col("obj_synonyms").explode()).with_columns(
+            pl.col("obj_synonyms")
+            .map_elements(get_equivalent_curies, return_dtype=pl.List(pl.String))
+            .alias("obj_synonyms")
+        )
+
         df.write_parquet(self.processed_dataframe_path)
         return df
