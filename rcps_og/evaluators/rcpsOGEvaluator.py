@@ -222,6 +222,21 @@ class rcpsOGEvaluator:
         if self.q_star:
             logger.info(f"q star loading from cache...")
             return self.q_star
+        ## check if no risk control should be done ##
+        if self.target_proportional_risk_increase == 0:
+            logging.info("Not controlling risk in this case")
+            self.q_star = 0.00
+            result_calibration = self.filter_candidates(
+                q=self.q_star, dataset=self.result_calibration_original
+            )
+            result_calibration = self.loss_function.execute(result_calibration)
+            result_calibration = self.count_candidates(result_calibration)
+            empirical_risk = self.calc_empirical_risk(
+                result_calibration, calibration=True
+            )
+            self.result_calibration_fitted = result_calibration
+            return self.q_star
+
         q = max(self.q_range)
 
         self.result_calibration_fitted = self.result_calibration_original

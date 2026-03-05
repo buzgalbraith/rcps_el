@@ -13,6 +13,12 @@ from rcps_og.utils.constants import BIOID_DIR
 import logging
 
 logger = logging.getLogger(__name__)
+from typing import TypedDict
+
+
+class safeishMatch(TypedDict):
+    curie: str
+    score: float
 
 
 class bioIDBenchmark(Dataset):
