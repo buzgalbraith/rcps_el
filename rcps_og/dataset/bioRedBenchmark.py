@@ -52,9 +52,12 @@ class bioRedBenchmark(Dataset):
     processed_dataframe_path: Path = BIORED_DIR.joinpath(
         "processed_BioRed_calibration.parquet"
     )
+    known_methods = ["gilda"]
 
-    def __init__(self, seed: int = 100, split_size: float = 0.2) -> None:
-        super().__init__(seed, split_size)
+    def __init__(
+        self, seed: int = 100, split_size: float = 0.2, method: str = "gilda"
+    ) -> None:
+        super().__init__(seed, split_size, method)
 
     def load_dataframe(self, dataframe_path: Path | None = None) -> pl.DataFrame:
         if dataframe_path is None:

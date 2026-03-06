@@ -18,9 +18,13 @@ class Dataset(ABC):
     processed_dataframe_path: Path = NotImplemented
     document_id_column: str = NotImplemented
     name: str = NotImplemented
+    known_methods: list = NotImplemented
 
-    def __init__(self, seed: int = 100, split_size: float = 0.2) -> None:
+    def __init__(
+        self, seed: int = 100, split_size: float = 0.2, method: str = "gilda"
+    ) -> None:
         self.seed: int = seed
+        self.method: str = method.lower().strip()
         self.split_size: float = split_size
         logger.info("Loading original dataset...")
         self.original_dataframe: pl.DataFrame = self.load_dataframe(

@@ -24,6 +24,7 @@ class safeishMatch(TypedDict):
 class bioIDBenchmark(Dataset):
     name = "bioID"
     document_id_column = "don_article"
+    known_methods = ["gilda"]
     mod = pystow.module("gilda", "biocreative")
     url = "https://github.com/buzgalbraith/BioCreative-VI-Track-1/raw/refs/heads/main/data/BioIDtraining_2.tar.gz"
     original_dataframe_path: Path = BIOID_DIR.joinpath("gilda_dataset.tsv")
@@ -31,8 +32,10 @@ class bioIDBenchmark(Dataset):
         "processed_gilda_dataset.parquet"
     )
 
-    def __init__(self, seed: int = 100, split_size: float = 0.2) -> None:
-        super().__init__(seed, split_size)
+    def __init__(
+        self, seed: int = 100, split_size: float = 0.2, method: str = "gilda"
+    ) -> None:
+        super().__init__(seed, split_size, method="gilda")
 
     def load_dataframe(self, dataframe_path: Path | None = None) -> pl.DataFrame:
         if dataframe_path is None:

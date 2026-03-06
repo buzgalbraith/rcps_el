@@ -16,10 +16,12 @@ import ast
 
 logger = logging.getLogger(__name__)
 
-gilda_terms_path = '~/.data/gilda/1.5.0/grounding_terms.tsv.gz'
+gilda_terms_path = "~/.data/gilda/1.5.0/grounding_terms.tsv.gz"
+
 
 class bioIDGildaBenchmark(Dataset):
     name = "bioIDGilda"
+    known_methods = ["gilda"]
     document_id_column = "don_article"
     mod = pystow.module("gilda", "biocreative")
     url = "https://github.com/buzgalbraith/BioCreative-VI-Track-1/raw/refs/heads/main/data/BioIDtraining_2.tar.gz"
@@ -59,42 +61,70 @@ class bioIDGildaBenchmark(Dataset):
             return pl.read_parquet(self.processed_dataframe_path)
         self.build_term_map()
         df = self.original_dataframe.with_columns(
-            pl.col("groundings")
-            .map_elements(
+            pl.col("groundings").map_elements(
                 self.parse_grounding,  # pass the function directly, no lambda needed
-                return_dtype=pl.List(pl.Struct({"name": pl.String, "curie": pl.String, "score": pl.Float64}))
-
+                return_dtype=pl.List(
+                    pl.Struct(
+                        {"name": pl.String, "curie": pl.String, "score": pl.Float64}
+                    )
+                ),
             )
         ).with_columns(
-                match_names=pl.col("groundings").list.eval(
-                    pl.element().struct.field("name")
-                ),
-                match_curies=pl.col("groundings").list.eval(
-                    pl.element().struct.field("curie")
-                ),
-                gilda_scores=pl.col("groundings").list.eval(
-                    pl.element().struct.field("score")
-                ),
-            )
+            match_names=pl.col("groundings").list.eval(
+                pl.element().struct.field("name")
+            ),
+            match_curies=pl.col("groundings").list.eval(
+                pl.element().struct.field("curie")
+            ),
+            gilda_scores=pl.col("groundings").list.eval(
+                pl.element().struct.field("score")
+            ),
+        )
         df.write_parquet(self.processed_dataframe_path)
         return df
+
     def parse_grounding(self, s):
         if s is None:
             return []
         matches = re.findall(r"\('([^']+)',\s*np\.float64\(([\deE.+-]+)\)", s)
         if matches:
-            return [{'name' : self.term_map.get(name), "curie": name, "score": float(val)} for name, val in matches]
-        return [{'name' : self.term_map.get(name), "curie": name, "score": float(val),} for name, val in ast.literal_eval(s)]
+            return [
+                {"name": self.term_map.get(name), "curie": name, "score": float(val)}
+                for name, val in matches
+            ]
+        return [
+            {
+                "name": self.term_map.get(name),
+                "curie": name,
+                "score": float(val),
+            }
+            for name, val in ast.literal_eval(s)
+        ]
 
     def build_term_map(self):
-        gilda_terms_df = pl.read_csv(gilda_terms_path, separator='\t')
-        curie_to_term = gilda_terms_df.with_columns(
-            curie = pl.col('db') + ':' + pl.col('id'),
-        ).drop_nulls(subset='curie').group_by(['curie']).first()
-        source_curie_to_term = gilda_terms_df.with_columns(
-            curie = pl.col('source_db') + ':' + pl.col('source_id'),
-        ).drop_nulls(subset='curie').group_by(['curie']).first()
-        term_lookup = curie_to_term.vstack(source_curie_to_term).select(['curie', 'entry_name', 'db']).group_by('curie').first()
+        gilda_terms_df = pl.read_csv(gilda_terms_path, separator="\t")
+        curie_to_term = (
+            gilda_terms_df.with_columns(
+                curie=pl.col("db") + ":" + pl.col("id"),
+            )
+            .drop_nulls(subset="curie")
+            .group_by(["curie"])
+            .first()
+        )
+        source_curie_to_term = (
+            gilda_terms_df.with_columns(
+                curie=pl.col("source_db") + ":" + pl.col("source_id"),
+            )
+            .drop_nulls(subset="curie")
+            .group_by(["curie"])
+            .first()
+        )
+        term_lookup = (
+            curie_to_term.vstack(source_curie_to_term)
+            .select(["curie", "entry_name", "db"])
+            .group_by("curie")
+            .first()
+        )
         self.term_map = dict()
         for row in term_lookup.iter_rows(named=True):
-            self.term_map[row.get('curie')] = row.get('entry_name')
+            self.term_map[row.get("curie")] = row.get("entry_name")
