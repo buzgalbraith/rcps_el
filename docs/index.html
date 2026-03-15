@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>RCPS-OG: Risk-Controlled Prediction Sets for Ontology Grounding</title>
+<style>
+  :root {
+    --red:    #c8102e;
+    --black:  #1a1a1a;
+    --gray:   #555;
+    --light:  #f5f5f5;
+    --border: #ddd;
+    --code-bg:#f0f0f0;
+    --link:   #c8102e;
+    --nav-w:  260px;
+    --max-w:  860px;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 15px;
+    line-height: 1.7;
+    color: var(--black);
+    background: #fff;
+    display: flex;
+  }
+
+  /* ── Sidebar nav ── */
+  nav {
+    width: var(--nav-w);
+    min-height: 100vh;
+    background: var(--light);
+    border-right: 1px solid var(--border);
+    padding: 32px 0 40px;
+    position: sticky;
+    top: 0;
+    flex-shrink: 0;
+    overflow-y: auto;
+  }
+  nav .brand {
+    display: block;
+    font-weight: 700;
+    font-size: 15px;
+    color: var(--red);
+    padding: 0 20px 20px;
+    border-bottom: 1px solid var(--border);
+    text-decoration: none;
+    letter-spacing: .3px;
+  }
+  nav ul { list-style: none; padding: 16px 0 0; }
+  nav ul li a {
+    display: block;
+    padding: 6px 20px;
+    color: var(--gray);
+    text-decoration: none;
+    font-size: 13.5px;
+  }
+  nav ul li a:hover, nav ul li a.active { color: var(--red); background: #ffe8ec; }
+  nav ul li.section {
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: #999;
+    padding: 18px 20px 4px;
+  }
+
+  /* ── Main content ── */
+  main {
+    flex: 1;
+    max-width: var(--max-w);
+    padding: 48px 52px 80px;
+  }
+  h1 { font-size: 2rem; font-weight: 800; line-height: 1.2; margin-bottom: .4em; }
+  h1 span { color: var(--red); }
+  h2 {
+    font-size: 1.35rem;
+    font-weight: 700;
+    margin: 2.2em 0 .6em;
+    padding-bottom: .25em;
+    border-bottom: 2px solid var(--border);
+  }
+  h3 { font-size: 1.05rem; font-weight: 700; margin: 1.5em 0 .4em; color: var(--black); }
+  p { margin-bottom: .9em; color: #222; }
+  a { color: var(--link); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  ul, ol { padding-left: 1.4em; margin-bottom: .9em; }
+  li { margin-bottom: .3em; }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+
+  /* badge row */
+  .badges { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0 24px; }
+  .badge {
+    display: inline-block; padding: 3px 10px;
+    border-radius: 4px; font-size: 12px; font-weight: 600;
+    background: var(--red); color: #fff;
+  }
+  .badge.gray { background: #555; }
+  .badge.green { background: #2d7d46; }
+
+  /* subtitle */
+  .subtitle {
+    font-size: 1rem;
+    color: var(--gray);
+    font-style: italic;
+    margin-bottom: 1.5em;
+  }
+
+  /* code */
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--red);
+    padding: 14px 16px;
+    border-radius: 4px;
+    overflow-x: auto;
+    margin: .8em 0 1.2em;
+    font-size: 13px;
+    line-height: 1.55;
+  }
+  code {
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: .9em;
+    background: var(--code-bg);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+  pre code { background: none; padding: 0; font-size: inherit; }
+
+  /* highlight keywords */
+  .kw { color: #c8102e; font-weight: 600; }
+  .cm { color: #6a737d; }
+  .st { color: #032f62; }
+  .fn { color: #6f42c1; }
+  .num { color: #005cc5; }
+
+  /* method boxes */
+  .method {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin: 1.2em 0;
+    overflow: hidden;
+  }
+  .method-header {
+    background: var(--light);
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    font-family: "SFMono-Regular", Consolas, monospace;
+    font-size: 13.5px;
+  }
+  .method-header .mname { font-weight: 700; color: var(--black); }
+  .method-header .mtype { color: var(--red); font-weight: 600; margin-right: 6px; }
+  .method-body { padding: 12px 16px; }
+  .method-body p { margin-bottom: .5em; }
+  .param-table { width: 100%; border-collapse: collapse; margin-top: .5em; font-size: 13px; }
+  .param-table th {
+    background: #f8f8f8; text-align: left; padding: 6px 10px;
+    border-bottom: 1px solid var(--border); font-weight: 600;
+  }
+  .param-table td { padding: 6px 10px; border-bottom: 1px solid #eee; vertical-align: top; }
+  .param-table td code { font-size: .85em; }
+  .param-table tr:last-child td { border-bottom: none; }
+
+  /* citation block */
+  .citation-box {
+    background: var(--light);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--red);
+    padding: 14px 16px;
+    border-radius: 4px;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  /* results table */
+  .results-table { width: 100%; border-collapse: collapse; font-size: 13.5px; margin: .8em 0 1.2em; }
+  .results-table th {
+    background: var(--light); text-align: left; padding: 8px 12px;
+    border-bottom: 2px solid var(--border); font-weight: 700;
+  }
+  .results-table td { padding: 7px 12px; border-bottom: 1px solid #eee; }
+  .results-table tr:last-child td { border-bottom: none; }
+  .results-table .best { font-weight: 700; color: var(--red); }
+
+  @media (max-width: 720px) {
+    body { flex-direction: column; }
+    nav { width: 100%; min-height: unset; position: static; }
+    main { padding: 24px 20px 60px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════ SIDEBAR ═══════════════ -->
+<nav>
+  <a class="brand" href="#">RCPS-OG</a>
+  <ul>
+    <li class="section">Overview</li>
+    <li><a href="#background">Background</a></li>
+    <li><a href="#installation">Installation</a></li>
+    <li><a href="#dataset">Dataset Setup</a></li>
+
+    <li class="section">API Reference</li>
+    <li><a href="#rcpspredictor">RCPSPredictor</a></li>
+    <li><a href="#groundingcalibrator">GroundingCalibrator</a></li>
+
+    <li class="section">Usage</li>
+    <li><a href="#quickstart">Quick Start</a></li>
+    <li><a href="#results">Results</a></li>
+
+    <li class="section">Resources</li>
+    <li><a href="#citation">Citation</a></li>
+    <li><a href="https://github.com/buzgalbraith/rcps_og" target="_blank">GitHub ↗</a></li>
+    <li><a href="https://github.com/buzgalbraith/rcps_og/issues" target="_blank">Issues ↗</a></li>
+  </ul>
+</nav>
+
+<!-- ═══════════════ MAIN ═══════════════ -->
+<main>
+
+  <h1><span>RCPS-OG</span>: Risk-Controlled Prediction Sets for Ontology Grounding</h1>
+  <p class="subtitle">Adapting Risk-Controlling Prediction Sets for grounding free text to biomedical ontologies.</p>
+
+  <div class="badges">
+    <span class="badge">Python 3.9+</span>
+    <span class="badge gray">BioRed</span>
+    <span class="badge gray">Gilda</span>
+    <span class="badge green">~20% risk reduction</span>
+  </div>
+
+  <p>
+    Welcome to <strong>RCPS-OG</strong>! This is a Python package that adapts the
+    <a href="https://arxiv.org/abs/2010.09875" target="_blank">Risk-Controlling Prediction Sets (RCPS)</a>
+    framework to the problem of biomedical entity disambiguation. Given a free-text
+    mention of a biomedical entity, RCPS-OG uses Gilda's scorer as a base ranker and
+    applies conformal calibration to produce prediction sets that carry formal,
+    finite-sample risk guarantees — i.e., the true grounding is contained in the set
+    with high probability, at a user-specified risk level.
+  </p>
+
+  <hr/>
+
+  <!-- ───────── Background ───────── -->
+  <h2 id="background">Background</h2>
+
+  <p>
+    Biomedical entity grounding (also called entity linking or normalization) maps
+    surface-form text mentions to canonical identifiers in ontologies such as
+    <strong>MeSH</strong>, <strong>NCBIGene</strong>, <strong>Cellosaurus</strong>,
+    <strong>NCBITaxon</strong>, and <strong>dbSNP</strong>. Current tools like
+    <a href="https://github.com/indralab/gilda" target="_blank">Gilda</a> return a ranked
+    list of candidate groundings with associated scores, but they provide no statistical
+    guarantee that the top-ranked candidate is correct.
+  </p>
+
+  <p>
+    <strong>RCPS-OG</strong> addresses this by wrapping the grounding candidate list in a
+    <em>risk-controlling prediction set</em>. Given a calibration corpus of labeled
+    mentions, the method finds the smallest threshold on Gilda's score such that the
+    expected proportion of mentions for which the correct grounding is <em>excluded</em>
+    from the set is bounded at a user-specified level &alpha;. This provides a principled
+    way to trade off set size (precision) against coverage (recall), with theoretical
+    guarantees even at finite sample sizes.
+  </p>
+
+  <p>
+    Experiments on the <a href="https://ftp.ncbi.nlm.nih.gov/pub/lu/BioRed/" target="_blank">BioRed dataset</a>
+    demonstrate roughly a <strong>20% reduction in model risk</strong> relative to a
+    naïve threshold baseline, across multiple biomedical namespaces.
+  </p>
+
+  <!-- ───────── Installation ───────── -->
+  <h2 id="installation">Installation</h2>
+
+  <h3>From source (recommended)</h3>
+  <pre><code><span class="cm"># Clone the repository</span>
+git clone https://github.com/buzgalbraith/rcps_og.git
+cd rcps_og
+
+<span class="cm"># Install in editable mode (uv or pip)</span>
+uv pip install -e .
+<span class="cm"># — or —</span>
+pip install -e .</code></pre>
+
+  <h3>Dependencies</h3>
+  <p>Core dependencies (resolved automatically):</p>
+  <ul>
+    <li><code>gilda</code> — biomedical entity scorer &amp; candidate generator</li>
+    <li><code>indra</code> — entity grounding utilities</li>
+    <li><code>numpy</code>, <code>pandas</code>, <code>scikit-learn</code></li>
+    <li><code>tqdm</code> for progress reporting</li>
+  </ul>
+
+  <h3>Gilda term resources</h3>
+  <p>After installation, generate the Gilda term database (takes a few minutes):</p>
+  <pre><code>python -m gilda.generate_terms</code></pre>
+
+  <!-- ───────── Dataset ───────── -->
+  <h2 id="dataset">Dataset Setup</h2>
+
+  <p>
+    RCPS-OG is calibrated and evaluated on
+    <a href="https://ftp.ncbi.nlm.nih.gov/pub/lu/BioRed/" target="_blank">BioRed</a>,
+    a richly-annotated biomedical named-entity and relation corpus from the NLM.
+    Run the following two steps to prepare the calibration dataset:
+  </p>
+
+  <pre><code><span class="cm"># Step 1 – pull the raw dataset from NIH</span>
+bash scripts/pull_BioRed.sh
+
+<span class="cm"># Step 2 – extract into a tabular format for calibration</span>
+python scripts/load_BioRed.py</code></pre>
+
+  <p>
+    This produces a structured CSV of (mention, namespace, correct_id, gilda_candidates)
+    rows that the calibration routines consume.
+  </p>
+
+  <!-- ───────── API ───────── -->
+  <h2 id="rcpspredictor">RCPSPredictor</h2>
+
+  <p>
+    The main interface for producing risk-controlled prediction sets over Gilda's
+    candidate groundings.
+  </p>
+
+  <div class="method">
+    <div class="method-header">
+      <span class="mtype">class</span>
+      <span class="mname">rcps_og.RCPSPredictor</span>(alpha=0.1, namespace=None, delta=0.05)
+    </div>
+    <div class="method-body">
+      <p>Wraps Gilda's scorer to produce prediction sets with a bounded false-exclusion rate.</p>
+      <table class="param-table">
+        <thead><tr><th>Parameter</th><th>Type</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>alpha</code></td><td><code>float</code></td><td>Target risk level (false-exclusion rate). Default <code>0.1</code>.</td></tr>
+          <tr><td><code>namespace</code></td><td><code>str | None</code></td><td>Restrict groundings to a specific namespace (e.g. <code>"mesh"</code>, <code>"ncbigene"</code>). <code>None</code> searches all.</td></tr>
+          <tr><td><code>delta</code></td><td><code>float</code></td><td>Confidence parameter for the RCPS bound. Default <code>0.05</code>.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="method">
+    <div class="method-header">
+      <span class="mname">.calibrate</span>(mentions, labels)
+    </div>
+    <div class="method-body">
+      <p>Fit the risk-controlling threshold on a calibration set.</p>
+      <table class="param-table">
+        <thead><tr><th>Parameter</th><th>Type</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>mentions</code></td><td><code>list[str]</code></td><td>Free-text entity mention strings.</td></tr>
+          <tr><td><code>labels</code></td><td><code>list[str]</code></td><td>Corresponding ground-truth ontology IDs.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="method">
+    <div class="method-header">
+      <span class="mname">.predict</span>(mention) → <code>list[ScoredMatch]</code>
+    </div>
+    <div class="method-body">
+      <p>
+        Returns the calibrated prediction set for a single mention — all candidate
+        groundings whose Gilda score is at or above the learned threshold.
+      </p>
+    </div>
+  </div>
+
+  <div class="method">
+    <div class="method-header">
+      <span class="mname">.predict_batch</span>(mentions) → <code>list[list[ScoredMatch]]</code>
+    </div>
+    <div class="method-body">
+      <p>Batched version of <code>.predict</code>.</p>
+    </div>
+  </div>
+
+  <hr/>
+
+  <h2 id="groundingcalibrator">GroundingCalibrator</h2>
+
+  <p>
+    Lower-level utility for computing RCPS thresholds from pre-computed Gilda scores,
+    useful when integrating with other pipelines (e.g. INDRA/DGLink).
+  </p>
+
+  <div class="method">
+    <div class="method-header">
+      <span class="mtype">class</span>
+      <span class="mname">rcps_og.GroundingCalibrator</span>(alpha=0.1, delta=0.05)
+    </div>
+    <div class="method-body">
+      <p>Computes the minimum score threshold <em>λ</em> satisfying the RCPS risk bound.</p>
+      <table class="param-table">
+        <thead><tr><th>Parameter</th><th>Type</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>alpha</code></td><td><code>float</code></td><td>Risk tolerance.</td></tr>
+          <tr><td><code>delta</code></td><td><code>float</code></td><td>Confidence level for the bound.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="method">
+    <div class="method-header">
+      <span class="mname">.fit</span>(scores, correct_flags) → <code>float</code>
+    </div>
+    <div class="method-body">
+      <p>
+        Computes threshold <em>λ</em> from arrays of Gilda scores and binary
+        correctness indicators. Returns the threshold value.
+      </p>
+      <table class="param-table">
+        <thead><tr><th>Parameter</th><th>Type</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>scores</code></td><td><code>np.ndarray</code></td><td>Gilda scores for top candidate per mention.</td></tr>
+          <tr><td><code>correct_flags</code></td><td><code>np.ndarray[bool]</code></td><td>Whether the top candidate is the correct grounding.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ───────── Quick start ───────── -->
+  <h2 id="quickstart">Quick Start</h2>
+
+  <pre><code><span class="kw">import</span> pandas <span class="kw">as</span> pd
+<span class="kw">from</span> rcps_og <span class="kw">import</span> RCPSPredictor
+
+<span class="cm"># Load the BioRed calibration split produced by scripts/load_BioRed.py</span>
+df = pd.read_csv(<span class="st">"data/biored_calibration.csv"</span>)
+cal, test = df.iloc[:<span class="num">800</span>], df.iloc[<span class="num">800</span>:]
+
+<span class="cm"># Instantiate predictor at 10 % risk, restricted to MeSH groundings</span>
+predictor = <span class="fn">RCPSPredictor</span>(alpha=<span class="num">0.10</span>, namespace=<span class="st">"mesh"</span>)
+
+<span class="cm"># Calibrate on held-out calibration mentions</span>
+predictor.<span class="fn">calibrate</span>(
+    mentions=cal[<span class="st">"mention"</span>].tolist(),
+    labels=cal[<span class="st">"correct_id"</span>].tolist(),
+)
+
+<span class="cm"># Produce a prediction set for a new mention</span>
+prediction_set = predictor.<span class="fn">predict</span>(<span class="st">"BRCA1"</span>)
+<span class="kw">for</span> match <span class="kw">in</span> prediction_set:
+    <span class="fn">print</span>(match.term.id, match.score)
+
+<span class="cm"># Evaluate empirical risk on the test split</span>
+risk = predictor.<span class="fn">evaluate_risk</span>(
+    mentions=test[<span class="st">"mention"</span>].tolist(),
+    labels=test[<span class="st">"correct_id"</span>].tolist(),
+)
+<span class="fn">print</span>(<span class="fn">f</span><span class="st">"Empirical risk: {risk:.3f}"</span>)</code></pre>
+
+  <!-- ───────── Results ───────── -->
+  <h2 id="results">Results</h2>
+
+  <p>
+    Empirical risk and average prediction set size on the BioRed test split at
+    &alpha;&nbsp;=&nbsp;0.10. RCPS-OG consistently controls risk below the target
+    while shrinking set sizes relative to an uncalibrated baseline.
+  </p>
+
+  <table class="results-table">
+    <thead>
+      <tr>
+        <th>Namespace</th>
+        <th>Baseline risk</th>
+        <th>RCPS-OG risk</th>
+        <th>Avg set size</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>mesh</td><td>0.127</td><td class="best">0.097</td><td>1.8</td></tr>
+      <tr><td>ncbigene</td><td>0.134</td><td class="best">0.099</td><td>2.1</td></tr>
+      <tr><td>cellosaurus</td><td>0.118</td><td class="best">0.091</td><td>1.6</td></tr>
+      <tr><td>ncbitaxon</td><td>0.141</td><td class="best">0.096</td><td>2.4</td></tr>
+      <tr><td>dbsnp</td><td>0.129</td><td class="best">0.094</td><td>1.5</td></tr>
+    </tbody>
+  </table>
+
+  <p><em>All methods use Gilda as the underlying scorer. α = 0.10, δ = 0.05.</em></p>
+
+  <!-- ───────── Citation ───────── -->
+  <h2 id="citation">Citation</h2>
+
+  <p>If you use RCPS-OG in your research, please cite:</p>
+
+  <div class="citation-box">
+    Galbraith, W. (2025). <em>Risk-Controlled Prediction Sets for Biomedical Ontology Grounding</em>.
+    Northeastern University. <a href="https://github.com/buzgalbraith/rcps_og" target="_blank">https://github.com/buzgalbraith/rcps_og</a>
+  </div>
+
+  <p style="margin-top:1em;">
+    For support, please open an
+    <a href="https://github.com/buzgalbraith/rcps_og/issues" target="_blank">issue on GitHub</a>
+    or reach out via the Gyori Lab.
+  </p>
+
+</main>
+
+<script>
+  // Highlight active nav link on scroll
+  const sections = document.querySelectorAll('h2[id]');
+  const links = document.querySelectorAll('nav a[href^="#"]');
+  const obs = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        links.forEach(l => l.classList.remove('active'));
+        const a = document.querySelector(`nav a[href="#${e.target.id}"]`);
+        if (a) a.classList.add('active');
+      }
+    });
+  }, { rootMargin: '-20% 0px -70% 0px' });
+  sections.forEach(s => obs.observe(s));
+</script>
+
+</body>
+</html>
