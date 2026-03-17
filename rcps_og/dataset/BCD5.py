@@ -21,6 +21,7 @@ class BCD5(Dataset):
     name = "BCD5"
     document_id_column = "document_id"
     known_methods = ["gilda", "krissbert"]
+    normalization_parameters: tuple[float] | None = None
 
     def __init__(
         self, seed: int = 100, split_size: float = 0.2, method: str = "gilda"
@@ -97,12 +98,13 @@ class BCD5(Dataset):
         with open(load_path, mode="r") as f:
             jsn = json.load(f)
         krissbert_df = self._load_kirssbert_split(jsn)
-        return krissbert_df.join(
+        merged_split = krissbert_df.join(
             bcd5_split,
             on=["document_id", "text", "offsets"],
             how="left",
             validate="1:1",
         ).with_row_index()
+        return self._krissbert_normalize(merged_dataset=merged_split)
 
     def gilda_process(self, split):
         """
@@ -140,6 +142,32 @@ class BCD5(Dataset):
         )
         return df
 
+    def _krissbert_normalize(self, merged_dataset: pl.DataFrame):
+        """
+        Normalize the krissbert score to be between zero and one and add a column marking if a value is a short circuit (ie not scored with Kirssbert)
+        """
+        if self.normalization_parameters is None:
+            ## if there are no normalization parameters yet assume we are currently on the calibration set and get them ##
+            tmp_df = merged_dataset.with_columns(
+                maxs=pl.col("match_scores").list.max(),
+                mins=pl.col("match_scores").list.min(),
+            )
+            self.normalization_parameters = (tmp_df["mins"].min(), tmp_df["maxs"].max())
+        return merged_dataset.with_columns(
+            short_circuit=pl.col("match_scores").list.eval(pl.element().is_null()),
+            match_scores=pl.col("match_scores").list.eval(
+                pl.when(pl.element().is_null())
+                .then(1.0)
+                .otherwise(
+                    (pl.element() - self.normalization_parameters[0])
+                    / (
+                        self.normalization_parameters[1]
+                        - self.normalization_parameters[0]
+                    )
+                )
+            ),
+        )
+
     def _load_bcd5_fulltext_split(self, dataset):
         """load same split data from BCD5 to get full text"""
         records = []
@@ -175,7 +203,8 @@ class BCD5(Dataset):
             offsets = record.get("offsets")[0]
             raw_candidates = record.get("candidates")
             obj_synonyms = [normalize_curie(db_ids)]
-            candidate_curies = [normalize_curie(x[0]) for x in raw_candidates]
+            candidate_scores = [x["score"] for x in raw_candidates]
+            candidate_curies = [normalize_curie(x["cuis"][0]) for x in raw_candidates]
             candidate_names = [
                 mesh_client.get_mesh_name(x.upper().removeprefix("MESH:"))
                 for x in candidate_curies
@@ -192,6 +221,7 @@ class BCD5(Dataset):
                     "obj_synonyms": obj_synonyms,
                     "match_curies": candidate_curies,
                     "match_names": candidate_names,
+                    "match_scores": candidate_scores,
                 }
             )
         return pl.from_dicts(records)

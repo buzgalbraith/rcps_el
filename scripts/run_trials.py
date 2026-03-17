@@ -1,6 +1,6 @@
 from rcps_og import rcpsOGEvaluator
 from rcps_og.dataset import bioIDBenchmark, bioRedBenchmark, BCD5, Dataset
-from rcps_og.scores import fuzzyStringScore, gildaScorer, sapbertScorer, Scorer
+from rcps_og.scores import fuzzyStringScore, gildaScorer, sapbertScorer, krissbertScorer, Scorer
 from rcps_og.losses import binaryMisscoverageLoss, lossFunction
 from rcps_og.dataset.bioIDGilda import bioIDGildaBenchmark
 
@@ -12,7 +12,7 @@ import polars as pl
 from pandas import DataFrame
 
 BENCHMARKS: list[Dataset] = [BCD5(), bioIDBenchmark(), bioRedBenchmark()]
-SCORES: list[Scorer] = [fuzzyStringScore(), gildaScorer(), sapbertScorer()]
+SCORES: list[Scorer] = [fuzzyStringScore(), gildaScorer(), sapbertScorer(), krissbertScorer()]
 LOSSES: list[lossFunction] = [binaryMisscoverageLoss()]
 RISK_TYPES = [True, False]
 MIN_CANDIDATES = [2, 5, 10]
@@ -20,7 +20,8 @@ TARGET_PROPORTIONAL_RISKS = [0.00, 0.01, 0.02, 0.05, 0.10, 0.20, 0.25]
 
 
 RISK_TYPES = [False]
-SCORES: list[Scorer] = [fuzzyStringScore(), sapbertScorer()]
+# SCORES: list[Scorer] = [fuzzyStringScore(), sapbertScorer()]
+SCORES : list[Scorer] = [krissbertScorer()]
 BENCHMARKS: list[Dataset] = [BCD5(method="krissbert")]
 MIN_CANDIDATES = [
     20,
@@ -75,7 +76,6 @@ if __name__ == "__main__":
 
         orig = evaluator.result_validation_original
         fitted = evaluator.result_validation_fitted
-        assert isinstance(fitted, DataFrame)
         orig_candidates = orig["n_candidates"].to_numpy()
         fitted_candidates = fitted["n_candidates"].to_numpy()
 

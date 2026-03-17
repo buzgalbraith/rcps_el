@@ -43,6 +43,12 @@ if __name__ == "__main__":
     )
     ax[0][0].plot(
         risk_targets,
+        calibration_res.filter(pl.col("score").eq("KrissBERT_scores"))["controlled_risk"],
+        label="KrissBert score",
+        alpha=0.5,
+    )
+    ax[0][0].plot(
+        risk_targets,
         [orig_risk_calibration for _ in risk_targets],
         "--",
         label="Original risk",
@@ -71,6 +77,11 @@ if __name__ == "__main__":
     ax[0][1].plot(
         risk_targets,
         validation_res.filter(pl.col("score").eq("SapBERT_scores"))["controlled_risk"],
+        alpha=0.5,
+    )
+    ax[0][1].plot(
+        risk_targets,
+        validation_res.filter(pl.col("score").eq("KrissBERT_scores"))["controlled_risk"],
         alpha=0.5,
     )
     ax[0][1].plot(
@@ -107,6 +118,13 @@ if __name__ == "__main__":
     )
     ax[1][0].plot(
         risk_targets,
+        calibration_res.filter(pl.col("score").eq("KrissBERT_scores"))[
+            "controlled_c_set_size"
+        ],
+        alpha=0.5,
+    )
+    ax[1][0].plot(
+        risk_targets,
         [orig_candidate_set_calibration for _ in risk_targets],
         linestyle="dashdot",
         label="Original candidate set size",
@@ -129,6 +147,13 @@ if __name__ == "__main__":
     ax[1][1].plot(
         risk_targets,
         validation_res.filter(pl.col("score").eq("SapBERT_scores"))[
+            "controlled_c_set_size"
+        ],
+        alpha=0.5,
+    )
+    ax[1][1].plot(
+        risk_targets,
+        validation_res.filter(pl.col("score").eq("KrissBERT_scores"))[
             "controlled_c_set_size"
         ],
         alpha=0.5,
