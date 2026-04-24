@@ -52,10 +52,10 @@ class bioRedBenchmark(Dataset):
     processed_dataframe_path: Path = BIORED_DIR.joinpath(
         "processed_BioRed_calibration.parquet"
     )
-    known_methods = ["gilda"]
+    known_methods = ["original"]
 
     def __init__(
-        self, seed: int = 100, split_size: float = 0.2, method: str = "gilda"
+        self, seed: int = 100, split_size: float = 0.2, method: str = "original"
     ) -> None:
         super().__init__(seed, split_size, method)
 
@@ -115,6 +115,7 @@ class bioRedBenchmark(Dataset):
                 )
             )
             .with_columns(
+                title = pl.col("full_text"),
                 match_names=pl.col("gilda_matches").list.eval(
                     pl.element().struct.field("name")
                 ),

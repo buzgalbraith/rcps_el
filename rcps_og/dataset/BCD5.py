@@ -20,6 +20,7 @@ gilda_terms_path = "~/.data/gilda/1.5.0/grounding_terms.tsv.gz"
 class BCD5(Dataset):
     name = "BCD5"
     document_id_column = "document_id"
+    title_column = "title"
     known_methods = ["gilda", "krissbert"]
     normalization_parameters: tuple[float] | None = None
 
@@ -173,6 +174,11 @@ class BCD5(Dataset):
         records = []
         for x in dataset:
             passages = x.get("passages", [])
+            ## get title should be in the first passage location but keep flexible i guess ## 
+            title = 'missing_title'
+            for passage in passages:
+                if passage.get("type", '') == 'title':
+                    title = passage.get("text", title)
             for passage in passages:
                 doc_id = passage.get("document_id", "missing_document_id")
                 full_text = passage.get("text", "full_text_missing")
@@ -184,6 +190,7 @@ class BCD5(Dataset):
                             "text": text,
                             "offsets": offsets,
                             "document_id": doc_id,
+                            'title' : title,
                             "full_text": full_text,
                         }
                     )

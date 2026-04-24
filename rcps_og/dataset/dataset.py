@@ -17,6 +17,7 @@ class Dataset(ABC):
     original_dataframe_path: Path = NotImplemented
     processed_dataframe_path: Path = NotImplemented
     document_id_column: str = NotImplemented
+    title_column: str = NotImplemented
     name: str = NotImplemented
     known_methods: list = NotImplemented
 
@@ -25,6 +26,9 @@ class Dataset(ABC):
     ) -> None:
         self.seed: int = seed
         self.method: str = method.lower().strip()
+        assert (
+            self.method in self.known_methods
+        ), f"Method: {self.method} not available known methods for dataset {self.name} are {self.known_methods}"
         self.split_size: float = split_size
         logger.info("Loading original dataset...")
         self.original_dataframe: pl.DataFrame = self.load_dataframe(
