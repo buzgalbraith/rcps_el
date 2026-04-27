@@ -18,4 +18,4 @@ if isinstance(home_loc, str):
     BCD5_DIR = Path.joinpath(DATA_PATH, "BCD5")
     BIORED_CAL = Path.joinpath(BIORED_DIR, "BioRed_calibration.tsv")
     BIORED_TEST = Path.joinpath(BIORED_DIR, "BioRed_test.tsv")
-    
+    CACHED_LLM_DIR = Path.joinpath(DATA_PATH, "cached_llm_groundings")

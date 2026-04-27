@@ -174,10 +174,10 @@ class BCD5(Dataset):
         records = []
         for x in dataset:
             passages = x.get("passages", [])
-            ## get title should be in the first passage location but keep flexible i guess ## 
-            title = 'missing_title'
+            ## get title should be in the first passage location but keep flexible i guess ##
+            title = "missing_title"
             for passage in passages:
-                if passage.get("type", '') == 'title':
+                if passage.get("type", "") == "title":
                     title = passage.get("text", title)
             for passage in passages:
                 doc_id = passage.get("document_id", "missing_document_id")
@@ -190,7 +190,7 @@ class BCD5(Dataset):
                             "text": text,
                             "offsets": offsets,
                             "document_id": doc_id,
-                            'title' : title,
+                            "title": title,
                             "full_text": full_text,
                         }
                     )

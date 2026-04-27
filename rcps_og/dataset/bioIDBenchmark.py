@@ -1,6 +1,6 @@
 """
 Loader for BioID benchmark,
-set method to original if want to directly ground 
+set method to original if want to directly ground
 set method to gilda to load groundings directly used in Gilda paper.
 """
 
@@ -14,22 +14,23 @@ import gilda
 from rcps_og.utils.constants import BIOID_DIR
 import logging
 import ast
-import re 
+import re
 
 logger = logging.getLogger(__name__)
 from typing import TypedDict
 
-gilda_terms_path = "~/.data/gilda/1.5.0/grounding_terms.tsv.gz" 
+gilda_terms_path = "~/.data/gilda/1.5.0/grounding_terms.tsv.gz"
+
 
 class bioIDBenchmark(Dataset):
     name = "bioID"
     document_id_column = "don_article"
-    title_column = 'title'
+    title_column = "title"
     known_methods = ["original", "gilda"]
     mod = pystow.module("gilda", "biocreative")
     url = "https://github.com/buzgalbraith/BioCreative-VI-Track-1/raw/refs/heads/main/data/BioIDtraining_2.tar.gz"
     original_dataframe_path: Path = BIOID_DIR.joinpath("gilda_dataset.tsv")
-    
+
     def __init__(
         self, seed: int = 100, split_size: float = 0.2, method: str = "original"
     ) -> None:
@@ -37,11 +38,11 @@ class bioIDBenchmark(Dataset):
         assert (
             self.method in self.known_methods
         ), f"Method: {self.method} not available known methods for dataset {self.name} are {self.known_methods}"
-        if self.method == 'original':
+        if self.method == "original":
             self.processed_dataframe_path = BIOID_DIR.joinpath(
                 "processed_gilda_dataset.parquet"
-                )
-        elif self.method == 'gilda':
+            )
+        elif self.method == "gilda":
             self.processed_dataframe_path: Path = BIOID_DIR.joinpath(
                 "processed_gilda_dataset_gilda_paper.parquet"
             )
@@ -63,13 +64,13 @@ class bioIDBenchmark(Dataset):
             )
         )
 
-    def preprocess_dataset(self)->pl.DataFrame:
-        if self.method == 'original':
+    def preprocess_dataset(self) -> pl.DataFrame:
+        if self.method == "original":
             return self._preprocess_dataset_original()
-        elif self.method == 'gilda':
+        elif self.method == "gilda":
             return self._preprocess_dataset_gilda()
-        
-    ## methods for using the original raw bioID dataset ## 
+
+    ## methods for using the original raw bioID dataset ##
 
     def _preprocess_dataset_original(
         self,
@@ -95,9 +96,8 @@ class bioIDBenchmark(Dataset):
                 ),
             )
         ).with_columns(
-            title = pl.col('don_article').map_elements(
-                lambda x: self.get_plaintext(x, title_only = True),
-                return_dtype=pl.String
+            title=pl.col("don_article").map_elements(
+                lambda x: self.get_plaintext(x, title_only=True), return_dtype=pl.String
             ),
             match_names=pl.col("gilda_matches").list.eval(
                 pl.element().struct.field("name")
@@ -113,7 +113,7 @@ class bioIDBenchmark(Dataset):
         return df
 
     @lru_cache(maxsize=None)
-    def get_plaintext(self, don_article: str, title_only:bool = False) -> str:
+    def get_plaintext(self, don_article: str, title_only: bool = False) -> str:
         """Get plaintext content from XML file in BioID corpus
 
         Parameters
@@ -139,6 +139,7 @@ class bioIDBenchmark(Dataset):
             return "/n".join(paragraphs) + "/n"
         non_empty = [p for p in paragraphs if p.strip()]
         return non_empty[0] if non_empty else ""
+
     def get_gilda_candidates(self, text: str, context: str | None) -> list[safeMatch]:
         matches = gilda.ground(text=text, context=context)
         records = []
@@ -158,7 +159,7 @@ class bioIDBenchmark(Dataset):
         context = self.get_plaintext(don_article)
         return self.get_gilda_candidates(text=text, context=context)
 
-    ## methods for loading the BioID dataset with groundings directly from the gilda paper## 
+    ## methods for loading the BioID dataset with groundings directly from the gilda paper##
     def _preprocess_dataset_gilda(
         self,
     ) -> pl.DataFrame:
@@ -179,9 +180,8 @@ class bioIDBenchmark(Dataset):
                 ),
             )
         ).with_columns(
-            title = pl.col('don_article').map_elements(
-                lambda x: self.get_plaintext(x, title_only = True),
-                return_dtype=pl.String
+            title=pl.col("don_article").map_elements(
+                lambda x: self.get_plaintext(x, title_only=True), return_dtype=pl.String
             ),
             match_names=pl.col("groundings").list.eval(
                 pl.element().struct.field("name")

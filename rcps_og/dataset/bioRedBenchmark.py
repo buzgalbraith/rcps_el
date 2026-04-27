@@ -115,7 +115,7 @@ class bioRedBenchmark(Dataset):
                 )
             )
             .with_columns(
-                title = pl.col("full_text"),
+                title=pl.col("full_text"),
                 match_names=pl.col("gilda_matches").list.eval(
                     pl.element().struct.field("name")
                 ),
