@@ -1,19 +1,21 @@
 import matplotlib.pyplot as plt
 import polars as pl
 
-DATASET_NAME = "BCD5_krissbert"
+DATASET_NAME = "bioID_gilda"
+# DATASET_NAME = "BCD5_krissbert"
 # DATASET_NAME = 'bioRED'
 # DATASET_NAME = 'BCD5'
 RISK_TYPE = "relative"
-MIN_SAMPLES = 20
+MIN_SAMPLES = 10
 
 
 if __name__ == "__main__":
-    df = pl.read_csv("trials.tsv", separator="\t")
+    df = pl.read_csv("trials.tsv", separator="\t").unique()
     df = (
         df.filter(pl.col("dataset_name").eq(DATASET_NAME))
         .filter(pl.col("min_candidates").eq(MIN_SAMPLES))
         .filter(pl.col("risk_type").eq(RISK_TYPE))
+        .filter(pl.col('loss_name').eq('binary_misscoverage_loss_safe_min_aggregation'))
     )
     fig, ax = plt.subplots(2, 2)
     calibration_res = df.filter(pl.col("split").eq("calibration")).sort(
@@ -26,6 +28,7 @@ if __name__ == "__main__":
     ## calibration risk
     orig_risk_calibration = calibration_res["original_risk"][0]
 
+    
     ax[0][0].plot(
         risk_targets,
         calibration_res.filter(pl.col("score").eq("fuzzy_string_scores"))[
@@ -41,10 +44,16 @@ if __name__ == "__main__":
         label="SapBERT score",
         alpha=0.5,
     )
+    # ax[0][0].plot(
+    #     risk_targets,
+    #     calibration_res.filter(pl.col("score").eq("KrissBERT_scores"))["controlled_risk"],
+    #     label="KrissBert score",
+    #     alpha=0.5,
+    # )
     ax[0][0].plot(
         risk_targets,
-        calibration_res.filter(pl.col("score").eq("KrissBERT_scores"))["controlled_risk"],
-        label="KrissBert score",
+        calibration_res.filter(pl.col("score").eq("LLM_scorer"))["controlled_risk"],
+        label="LLM score",
         alpha=0.5,
     )
     ax[0][0].plot(
@@ -79,9 +88,14 @@ if __name__ == "__main__":
         validation_res.filter(pl.col("score").eq("SapBERT_scores"))["controlled_risk"],
         alpha=0.5,
     )
+    # ax[0][1].plot(
+    #     risk_targets,
+    #     validation_res.filter(pl.col("score").eq("KrissBERT_scores"))["controlled_risk"],
+    #     alpha=0.5,
+    # )
     ax[0][1].plot(
         risk_targets,
-        validation_res.filter(pl.col("score").eq("KrissBERT_scores"))["controlled_risk"],
+        validation_res.filter(pl.col("score").eq("LLM_scorer"))["controlled_risk"],
         alpha=0.5,
     )
     ax[0][1].plot(
@@ -116,9 +130,23 @@ if __name__ == "__main__":
         ],
         alpha=0.5,
     )
+    # ax[1][0].plot(
+    #     risk_targets,
+    #     calibration_res.filter(pl.col("score").eq("KrissBERT_scores"))[
+    #         "controlled_c_set_size"
+    #     ],
+    #     alpha=0.5,
+    # )
     ax[1][0].plot(
         risk_targets,
-        calibration_res.filter(pl.col("score").eq("KrissBERT_scores"))[
+        calibration_res.filter(pl.col("score").eq("LLM_scorer"))[
+            "controlled_c_set_size"
+        ],
+        alpha=0.5,
+    )
+    ax[1][0].plot(
+        risk_targets,
+        calibration_res.filter(pl.col("score").eq("LLM_scorer"))[
             "controlled_c_set_size"
         ],
         alpha=0.5,
@@ -151,9 +179,16 @@ if __name__ == "__main__":
         ],
         alpha=0.5,
     )
+    # ax[1][1].plot(
+    #     risk_targets,
+    #     validation_res.filter(pl.col("score").eq("KrissBERT_scores"))[
+    #         "controlled_c_set_size"
+    #     ],
+    #     alpha=0.5,
+    # )
     ax[1][1].plot(
         risk_targets,
-        validation_res.filter(pl.col("score").eq("KrissBERT_scores"))[
+        validation_res.filter(pl.col("score").eq("LLM_scorer"))[
             "controlled_c_set_size"
         ],
         alpha=0.5,

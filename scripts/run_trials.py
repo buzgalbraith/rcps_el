@@ -1,7 +1,7 @@
 from rcps_og import rcpsOGEvaluator
 from rcps_og.dataset import bioIDBenchmark, bioRedBenchmark, BCD5, Dataset
-from rcps_og.scores import fuzzyStringScore, gildaScorer, sapbertScorer, krissbertScorer, Scorer
-from rcps_og.losses import binaryMisscoverageLoss, lossFunction
+from rcps_og.scores import fuzzyStringScore, gildaScorer, sapbertScorer, krissbertScorer, llmScorer, Scorer
+from rcps_og.losses import binaryMisscoverageLoss, hitsAtK, lossFunction
 from rcps_og.dataset.bioIDGilda import bioIDGildaBenchmark
 
 
@@ -13,18 +13,21 @@ from pandas import DataFrame
 
 BENCHMARKS: list[Dataset] = [BCD5(), bioIDBenchmark(), bioRedBenchmark()]
 SCORES: list[Scorer] = [fuzzyStringScore(), gildaScorer(), sapbertScorer(), krissbertScorer()]
-LOSSES: list[lossFunction] = [binaryMisscoverageLoss()]
+LOSSES: list[lossFunction] = [binaryMisscoverageLoss(), hitsAtK(k_size=1)]
 RISK_TYPES = [True, False]
 MIN_CANDIDATES = [2, 5, 10]
 TARGET_PROPORTIONAL_RISKS = [0.00, 0.01, 0.02, 0.05, 0.10, 0.20, 0.25]
 
 
 RISK_TYPES = [False]
+LOSSES: list[lossFunction] = [hitsAtK(k_size=1), hitsAtK(k_size=2), hitsAtK(k_size=5), hitsAtK(k_size=10)]
+LOSSES: list[lossFunction] = [binaryMisscoverageLoss()]
 # SCORES: list[Scorer] = [fuzzyStringScore(), sapbertScorer()]
-SCORES : list[Scorer] = [krissbertScorer()]
-BENCHMARKS: list[Dataset] = [BCD5(method="krissbert")]
+# SCORES : list[Scorer] = [krissbertScorer()]
+BENCHMARKS: list[Dataset] = [bioIDBenchmark()]
+SCORES : list[Scorer] = [fuzzyStringScore(), sapbertScorer(), llmScorer()]
 MIN_CANDIDATES = [
-    20,
+    10
 ]
 
 
@@ -80,6 +83,7 @@ if __name__ == "__main__":
         fitted_candidates = fitted["n_candidates"].to_numpy()
 
         risk_name = "absolute" if risk_type else "relative"
+        loss_type = loss.name
         ## add training information
         records.append(
             {
@@ -89,6 +93,7 @@ if __name__ == "__main__":
                 "min_candidates": min_candidate,
                 "target_risk": target_risk,
                 "risk_type": risk_name,
+                "loss_name": loss_type,
                 "original_risk": original_risk_calibration,
                 "controlled_risk": risk_controlled_calibration,
                 "original_c_set_size": c_set_size_original_calibration,
@@ -104,6 +109,7 @@ if __name__ == "__main__":
                 "min_candidates": min_candidate,
                 "target_risk": target_risk,
                 "risk_type": risk_name,
+                "loss_name": loss_type,
                 "original_risk": original_risk_validation,
                 "controlled_risk": risk_controlled_validation,
                 "original_c_set_size": c_set_size_original_validation,
