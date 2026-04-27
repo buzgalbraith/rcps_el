@@ -14,6 +14,12 @@ def process_split(split, dataset):
     records = []
     for x in dataset.get(split):
         passages = x.get("passages", [])
+        ## get title should be in the first passage location but keep flexible i guess ## 
+        title = 'missing_title'
+        for passage in passages:
+            if passage.get("type", '') == 'title':
+                title = passage.get("text", title)
+        ## extract entity mentions ## 
         for passage in passages:
             doc_id = passage.get("document_id", "missing_document_id")
             full_text = passage.get("text", "full_text_missing")
@@ -37,6 +43,7 @@ def process_split(split, dataset):
                         "obj_synonyms": names,
                         "obj_dbs": dbs,
                         "document_id": doc_id,
+                        "title": title,
                         "full_text": full_text,
                     }
                 )

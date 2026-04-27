@@ -7,10 +7,8 @@ import json
 import tqdm
 from pyobo import get_name
 from rcps_og.utils.constants import (
-    RESOURCE_PATH,
+    BIORED_DIR,
     ENTITY_TYPE_MAPS,
-    TESTING_DATA_PATH,
-    CALIBRATION_DATA_PATH,
 )
 
 
@@ -62,15 +60,15 @@ def extract_dataset(jsn: dict) -> list:
 if __name__ == "__main__":
     ## process calibration data
     print("extracting calibration data...")
-    with open(f"{RESOURCE_PATH}/Train.BioC.JSON", mode="r") as f:
+    with open(f"{BIORED_DIR}/Train.BioC.JSON", mode="r") as f:
         jsn = json.load(f)
-    records = extract_dataset(jsn=jsn)
-    df = pl.from_records(records)
-    df.write_csv(CALIBRATION_DATA_PATH, separator="\t")
-    ## process testing data
-    print("extracting testing data...")
-    with open(f"{RESOURCE_PATH}/Test.BioC.JSON", mode="r") as f:
-        jsn = json.load(f)
-    records = extract_dataset(jsn=jsn)
-    df = pl.from_records(records)
-    df.write_csv(TESTING_DATA_PATH, separator="\t")
+    # records = extract_dataset(jsn=jsn)
+    # df = pl.from_records(records)
+    # df.write_csv(CALIBRATION_DATA_PATH, separator="\t")
+    # ## process testing data
+    # print("extracting testing data...")
+    # with open(f"{BIOID_DIR}/Test.BioC.JSON", mode="r") as f:
+    #     jsn = json.load(f)
+    # records = extract_dataset(jsn=jsn)
+    # df = pl.from_records(records)
+    # df.write_csv(TESTING_DATA_PATH, separator="\t")
