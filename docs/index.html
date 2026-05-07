@@ -211,8 +211,8 @@
 
     <li class="section">Resources</li>
     <li><a href="#citation">Citation</a></li>
-    <li><a href="https://github.com/buzgalbraith/rcps_og" target="_blank">GitHub ↗</a></li>
-    <li><a href="https://github.com/buzgalbraith/rcps_og/issues" target="_blank">Issues ↗</a></li>
+    <li><a href="https://github.com/buzgalbraith/rcps_el" target="_blank">GitHub ↗</a></li>
+    <li><a href="https://github.com/buzgalbraith/rcps_el/issues" target="_blank">Issues ↗</a></li>
   </ul>
 </nav>
 
@@ -275,8 +275,8 @@
 
   <h3>From source (recommended)</h3>
   <pre><code><span class="cm"># Clone the repository</span>
-git clone https://github.com/buzgalbraith/rcps_og.git
-cd rcps_og
+git clone https://github.com/buzgalbraith/rcps_el.git
+cd rcps_el
 
 <span class="cm"># Install in editable mode (uv or pip)</span>
 uv pip install -e .
@@ -328,7 +328,7 @@ python scripts/load_BioRed.py</code></pre>
   <div class="method">
     <div class="method-header">
       <span class="mtype">class</span>
-      <span class="mname">rcps_og.RCPSPredictor</span>(alpha=0.1, namespace=None, delta=0.05)
+      <span class="mname">rcps_el.RCPSPredictor</span>(alpha=0.1, namespace=None, delta=0.05)
     </div>
     <div class="method-body">
       <p>Wraps Gilda's scorer to produce prediction sets with a bounded false-exclusion rate.</p>
@@ -392,7 +392,7 @@ python scripts/load_BioRed.py</code></pre>
   <div class="method">
     <div class="method-header">
       <span class="mtype">class</span>
-      <span class="mname">rcps_og.GroundingCalibrator</span>(alpha=0.1, delta=0.05)
+      <span class="mname">rcps_el.GroundingCalibrator</span>(alpha=0.1, delta=0.05)
     </div>
     <div class="method-body">
       <p>Computes the minimum score threshold <em>λ</em> satisfying the RCPS risk bound.</p>
@@ -429,7 +429,7 @@ python scripts/load_BioRed.py</code></pre>
   <h2 id="quickstart">Quick Start</h2>
 
   <pre><code><span class="kw">import</span> pandas <span class="kw">as</span> pd
-<span class="kw">from</span> rcps_og <span class="kw">import</span> RCPSPredictor
+<span class="kw">from</span> rcps_el <span class="kw">import</span> RCPSPredictor
 
 <span class="cm"># Load the BioRed calibration split produced by scripts/load_BioRed.py</span>
 df = pd.read_csv(<span class="st">"data/biored_calibration.csv"</span>)
@@ -492,12 +492,12 @@ risk = predictor.<span class="fn">evaluate_risk</span>(
 
   <div class="citation-box">
     Galbraith, W. (2025). <em>Risk-Controlled Prediction Sets for Biomedical Ontology Grounding</em>.
-    Northeastern University. <a href="https://github.com/buzgalbraith/rcps_og" target="_blank">https://github.com/buzgalbraith/rcps_og</a>
+    Northeastern University. <a href="https://github.com/buzgalbraith/rcps_el" target="_blank">https://github.com/buzgalbraith/rcps_el</a>
   </div>
 
   <p style="margin-top:1em;">
     For support, please open an
-    <a href="https://github.com/buzgalbraith/rcps_og/issues" target="_blank">issue on GitHub</a>
+    <a href="https://github.com/buzgalbraith/rcps_el/issues" target="_blank">issue on GitHub</a>
     or reach out via the Gyori Lab.
   </p>
 

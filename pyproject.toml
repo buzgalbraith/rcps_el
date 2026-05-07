@@ -1,5 +1,5 @@
 [project]
-name = "rcps-og"
+name = "rcps-el"
 version = "0.1.0"
 description = "Adapting methods for risk controlled prediction sets for grounding free text to biomedical ontologies."
 readme = "README.md"

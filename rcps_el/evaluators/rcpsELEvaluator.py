@@ -2,10 +2,10 @@
 Class for running RCPS across a given dataset, with a specific score and loss function
 """
 
-from rcps_og.scores import Scorer
-from rcps_og.losses import lossFunction
-from rcps_og.dataset import Dataset
-from rcps_og.utils import safeMatch
+from rcps_el.scores import Scorer
+from rcps_el.losses import lossFunction
+from rcps_el.dataset import Dataset
+from rcps_el.utils import safeMatch
 
 from numpy import linspace
 import polars as pl
@@ -15,7 +15,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class rcpsOGEvaluator:
+class rcpsELEvaluator:
     results_summary: list[dict] = []
 
     def __init__(

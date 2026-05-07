@@ -3,11 +3,11 @@ Loader for BioRed benchmark
 """
 
 from .dataset import Dataset, pl, Path
-from rcps_og.utils import safeMatch
+from rcps_el.utils import safeMatch
 from bioregistry import normalize_curie
 import gilda
 from indra.databases import hgnc_client, mesh_client
-from rcps_og.utils.constants import BIORED_DIR
+from rcps_el.utils.constants import BIORED_DIR
 import os
 import logging
 

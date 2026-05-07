@@ -1,8 +1,8 @@
-from rcps_og import rcpsOGEvaluator, rcpsOGSetEvaluator
-from rcps_og.dataset import bioIDBenchmark, bioRedBenchmark, BCD5, Dataset
-from rcps_og.dataset.bioIDGilda import bioIDGildaBenchmark
-from rcps_og.scores import fuzzyStringScore, gildaScorer, sapbertScorer, krissbertScorer, Scorer
-from rcps_og.losses import binaryMisscoverageLoss, lossFunction
+from rcps_el import rcpsELEvaluator, rcpsELSetEvaluator
+from rcps_el.dataset import bioIDBenchmark, bioRedBenchmark, BCD5, Dataset
+from rcps_el.dataset.bioIDGilda import bioIDGildaBenchmark
+from rcps_el.scores import fuzzyStringScore, gildaScorer, sapbertScorer, krissbertScorer, Scorer
+from rcps_el.losses import binaryMisscoverageLoss, lossFunction
 
 # BENCHMARKS: list[Dataset] = [bioIDBenchmark(), bioRedBenchmark(), BCD5()]
 # SCORES: list[Scorer] = [fuzzyStringScore(), gildaScorer(), sapbertScorer()]
@@ -26,7 +26,7 @@ def main():
                     # dataset.calibration_set = dataset.validation_set
                     # dataset.validation_set = dataset.test_set
                     evaluators.append(
-                        rcpsOGEvaluator(
+                        rcpsELEvaluator(
                             dataset=dataset,
                             score_function=score_function,
                             loss_function=loss_function,
@@ -35,7 +35,7 @@ def main():
                             target_proportional_risk_increase=0.20,
                         )
                     )
-    set_evaluator = rcpsOGSetEvaluator(evaluators=evaluators)
+    set_evaluator = rcpsELSetEvaluator(evaluators=evaluators)
     set_evaluator.execute()
     evaluator = set_evaluator.evaluators[0]
     evaluator.results_summary[1]

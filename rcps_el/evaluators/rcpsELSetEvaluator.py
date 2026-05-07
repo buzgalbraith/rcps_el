@@ -1,4 +1,4 @@
-from .rcpsOGEvaluator import rcpsOGEvaluator
+from .rcpsELEvaluator import rcpsELEvaluator
 import polars as pl
 from tqdm import tqdm
 from pathlib import Path
@@ -10,10 +10,10 @@ logger = logging.getLogger(__name__)
 HERE = Path(__file__).parent
 REPO_ROOT = HERE.parent.parent
 RESULTS_BASE = REPO_ROOT.joinpath("results")
-DEFAULT_RESULT = RESULTS_BASE.joinpath("rcps_og_results_summary.tsv")
+DEFAULT_RESULT = RESULTS_BASE.joinpath("rcps_el_results_summary.tsv")
 
 
-class rcpsOGSetEvaluator:
+class rcpsELSetEvaluator:
     summary_cols = [
         "dataset",
         "split",
@@ -25,7 +25,7 @@ class rcpsOGSetEvaluator:
     ]
 
     def __init__(
-        self, evaluators: list[rcpsOGEvaluator], results_path: Path | None = None
+        self, evaluators: list[rcpsELEvaluator], results_path: Path | None = None
     ) -> None:
         self.evaluators = evaluators
         self.result_set: pl.DataFrame | None = None

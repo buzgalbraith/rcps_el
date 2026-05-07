@@ -3,10 +3,10 @@ Loader for BioID benchmark
 """
 
 from .dataset import Dataset, pl, Path
-from rcps_og.utils import safeMatch
+from rcps_el.utils import safeMatch
 import os
 import gilda
-from rcps_og.utils.constants import BCD5_DIR, KRISSBERT_DIR
+from rcps_el.utils.constants import BCD5_DIR, KRISSBERT_DIR
 from bioregistry import normalize_curie
 from datasets import load_dataset
 import json

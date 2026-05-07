@@ -5,13 +5,13 @@ set method to gilda to load groundings directly used in Gilda paper.
 """
 
 from .dataset import Dataset, pl, Path
-from rcps_og.utils import safeMatch
+from rcps_el.utils import safeMatch
 import xml.etree.ElementTree as etree
 import pystow
 import os
 from functools import lru_cache
 import gilda
-from rcps_og.utils.constants import BIOID_DIR
+from rcps_el.utils.constants import BIOID_DIR
 import logging
 import ast
 import re

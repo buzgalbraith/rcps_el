@@ -1,7 +1,7 @@
 from datasets import load_dataset
 from bioregistry import normalize_curie
 import polars as pl
-from rcps_og.utils.constants import BCD5_DIR
+from rcps_el.utils.constants import BCD5_DIR
 import os
 
 import logging

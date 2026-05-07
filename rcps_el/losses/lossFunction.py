@@ -2,7 +2,7 @@
 Abstract class for getting the loss from a list
 """
 
-from rcps_og.aggregators import Aggregator
+from rcps_el.aggregators import Aggregator
 import polars as pl
 
 from typing import Optional

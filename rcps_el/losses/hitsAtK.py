@@ -1,5 +1,5 @@
 from .lossFunction import lossFunction, pl
-from rcps_og.aggregators import Aggregator, safeMinAggregator
+from rcps_el.aggregators import Aggregator, safeMinAggregator
 
 
 class hitsAtK(lossFunction):

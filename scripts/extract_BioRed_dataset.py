@@ -6,7 +6,7 @@ import polars as pl
 import json
 import tqdm
 from pyobo import get_name
-from rcps_og.utils.constants import (
+from rcps_el.utils.constants import (
     BIORED_DIR,
     ENTITY_TYPE_MAPS,
 )

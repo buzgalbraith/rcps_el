@@ -4,7 +4,7 @@ LLM Scorer class
 
 from .scorer import Scorer, pl
 from dglink.core.LLMClients import ollamaClient, openAIClient, LLMClient
-from rcps_og.utils.constants import CACHED_LLM_DIR
+from rcps_el.utils.constants import CACHED_LLM_DIR
 import textwrap
 import json
 from pydantic import BaseModel
@@ -50,7 +50,7 @@ class llmScorer(Scorer):
             self.key_cols = ["term", "title", "grounding"]
         else:
             self.key_cols = ["term", "grounding"]
-        self.name = f"LLM_scorer{title_str}"
+        self.name = f"LLM_scorer{title_str}_batch_size{self.batch_size}"
         self._load_cached_groundings()
 
     ## here needed to overload execute to work with potential tittles ##
