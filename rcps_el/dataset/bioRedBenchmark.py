@@ -55,9 +55,9 @@ class bioRedBenchmark(Dataset):
     known_methods = ["original"]
 
     def __init__(
-        self, seed: int = 100, split_size: float = 0.2, method: str = "original"
+        self, seed: int = 100, split_size: float = 0.2, method: str = "original", original_dataframe_path: str = None
     ) -> None:
-        super().__init__(seed, split_size, method)
+        super().__init__(seed, split_size, method, original_dataframe_path)
 
     def load_dataframe(self, dataframe_path: Path | None = None) -> pl.DataFrame:
         if dataframe_path is None:

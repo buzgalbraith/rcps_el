@@ -25,7 +25,7 @@ class BCD5(Dataset):
     normalization_parameters: tuple[float] | None = None
 
     def __init__(
-        self, seed: int = 100, split_size: float = 0.2, method: str = "gilda"
+        self, seed: int = 100, split_size: float = 0.2, method: str = "gilda", original_dataframe_path: str = None
     ) -> None:
         """going to need to do separate initialization"""
         self.method = method.lower().strip()

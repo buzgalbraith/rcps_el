@@ -22,7 +22,7 @@ class Dataset(ABC):
     known_methods: list = NotImplemented
 
     def __init__(
-        self, seed: int = 100, split_size: float = 0.2, method: str = "gilda"
+        self, seed: int = 100, split_size: float = 0.2, method: str = "gilda", original_dataframe_path: str = None
     ) -> None:
         self.seed: int = seed
         self.method: str = method.lower().strip()
@@ -31,9 +31,15 @@ class Dataset(ABC):
         ), f"Method: {self.method} not available known methods for dataset {self.name} are {self.known_methods}"
         self.split_size: float = split_size
         logger.info("Loading original dataset...")
-        self.original_dataframe: pl.DataFrame = self.load_dataframe(
-            dataframe_path=self.original_dataframe_path
-        )
+        ## over-ride if want to use user specified dataset ## 
+        if original_dataframe_path:
+            self.original_dataframe: pl.DataFrame = self.load_dataframe(
+            dataframe_path=original_dataframe_path
+            )
+        else:  
+            self.original_dataframe: pl.DataFrame = self.load_dataframe(
+                dataframe_path=self.original_dataframe_path
+            )
         logger.info("Pre-processing dataset...")
         self.full_dataframe: pl.DataFrame = self.preprocess_dataset()
         logger.info("Splitting dataset... ")

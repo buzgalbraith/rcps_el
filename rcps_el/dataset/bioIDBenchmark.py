@@ -32,7 +32,7 @@ class bioIDBenchmark(Dataset):
     original_dataframe_path: Path = BIOID_DIR.joinpath("gilda_dataset.tsv")
 
     def __init__(
-        self, seed: int = 100, split_size: float = 0.2, method: str = "original"
+        self, seed: int = 100, split_size: float = 0.2, method: str = "original", original_dataframe_path: str = None
     ) -> None:
         self.method: str = method.lower().strip()
         assert (
@@ -46,7 +46,7 @@ class bioIDBenchmark(Dataset):
             self.processed_dataframe_path: Path = BIOID_DIR.joinpath(
                 "processed_gilda_dataset_gilda_paper.parquet"
             )
-        super().__init__(seed, split_size, method)
+        super().__init__(seed, split_size, method, original_dataframe_path)
 
     def load_dataframe(self, dataframe_path: Path | None = None) -> pl.DataFrame:
         if dataframe_path is None:
@@ -193,6 +193,7 @@ class bioIDBenchmark(Dataset):
                 pl.element().struct.field("score")
             ),
         )
+        os.makedirs(self.processed_dataframe_path.parent, exist_ok=True)
         df.write_parquet(self.processed_dataframe_path)
         return df
 
