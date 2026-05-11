@@ -17,15 +17,15 @@ producing compact candidate sets while preserving coverage guarantees.
 ## Installation 
 - The package can be installed locally with `pip install -e .` 
 ## Quick start
-Here is a basic example of using the RCPS-EL framework on a example dataset.
+Bellow is a basic example of using the RCPS-EL framework on a example dataset.
 ```
 from rcps_el.dataset import bioIDBenchmark
-from rcps_el.scores import fuzzyStringScore
+from rcps_el.scores import sapbertScorer
 from rcps_el.losses import binaryMisscoverageLoss
 from rcps_el.evaluators import rcpsELEvaluator
 
 ## define score and loss functions ##
-score = fuzzyStringScore()
+score = sapbertScorer()
 loss = binaryMisscoverageLoss()
 
 ## load an example dataset ## 
