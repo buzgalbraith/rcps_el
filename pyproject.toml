@@ -12,5 +12,10 @@ dependencies = [
     "polars>=1.35.2",
     "pyobo>=0.12.12",
     "rapidfuzz>=3.14.3",
-    "torch",
+    "torch==2.11.0",
+    "ollama==0.6.2",
+    "transformers==4.57.6",
+    "datasets==4.8.5",
+    ## Use LLMClients from DGLink ## 
+    "dglink @ git+https://github.com/buzgalbraith/dglink.git@b3ee917", 
 ]
