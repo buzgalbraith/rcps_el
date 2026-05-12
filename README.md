@@ -5,7 +5,7 @@ Existing biomedical EL models return ranked candidate lists without formal stati
 
 Formally, RCPS-EL solves:
 
-$$q^* \in \arg\max_{q} \mathbb{E}[|T_q(X)|] \quad \text{subject to} \quad \frac{R(q) - R(q_0)}{R(q_0)} \leq \alpha$$
+$$q^* \in \arg\min_{q} \mathbb{E}[|T_q(X)|] \quad \text{subject to} \quad \frac{R(q) - R(q_0)}{R(q_0)} \leq \alpha$$
 
 producing compact candidate sets while preserving coverage guarantees.
 
