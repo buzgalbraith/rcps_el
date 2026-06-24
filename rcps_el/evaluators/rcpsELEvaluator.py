@@ -96,6 +96,7 @@ class rcpsELEvaluator:
         self.results_summary.append(
             {
                 "dataset": self.dataset.name,
+                "source_method": self.dataset.method,  ## original method that we are doing risk control for.
                 "split": "calibration",
                 "target_proportional_risk_increase": self.target_proportional_risk_increase,
                 "min_candidates": self.min_candidates,
@@ -121,6 +122,7 @@ class rcpsELEvaluator:
         self.results_summary.append(
             {
                 "dataset": self.dataset.name,
+                "source_method": self.dataset.method,  ## original method that we are doing risk control for.
                 "split": "validation",
                 "target_proportional_risk_increase": self.target_proportional_risk_increase,
                 "min_candidates": self.min_candidates,

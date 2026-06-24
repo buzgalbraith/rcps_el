@@ -19,4 +19,5 @@ dependencies = [
     ## Use LLMClients from DGLink ##
     "dglink @ git+https://github.com/buzgalbraith/dglink.git@b3ee917",
     "pystow>=0.8.19",
+    "matplotlib>=3.10.9",
 ]
