@@ -25,52 +25,28 @@ from tqdm import tqdm
 import os
 import polars as pl
 
-# BENCHMARKS: list[Dataset] = [BCD5(), bioIDBenchmark(), bioRedBenchmark()]
-BENCHMARKS: list[Dataset] = [medCodERBenchmark()]
 
-SCORES: list[Scorer] = [MedCodErScorer()]
-# SCORES: list[Scorer] = [fuzzyStringScore(), gildaScorer(), sapbertScorer()]
-
-# SCORES: list[Scorer] = [llmScorer(batch_size=1)]
-# SCORES: list[Scorer] = [krissbertScorer()]
-# LOSSES: list[lossFunction] = [binaryMisscoverageLoss(), hitsAtK(k_size=1)]
-# RISK_TYPES = [True, False]
-# MIN_CANDIDATES = [2, 5, 10]
-
-TARGET_PROPORTIONAL_RISKS = [0.00, 0.01, 0.02, 0.05, 0.10, 0.20, 0.25]
-
-
-RISK_TYPES = [False]
-LOSSES: list[lossFunction] = [hitsAtK(k_size=5)]
-
-# LOSSES: list[lossFunction] = [hitsAtK(k_size=1), hitsAtK(k_size=2), hitsAtK(k_size=5), hitsAtK(k_size=10)]
-# LOSSES: list[lossFunction] = [binaryMisscoverageLoss()]
-# SCORES: list[Scorer] = [fuzzyStringScore(), sapbertScorer(), gildaScorer()]
-# SCORES: list[Scorer] = [llmScorer(batch_size=1)]
-# SCORES : list[Scorer] = [krissbertScorer()]
-# BENCHMARKS: list[Dataset] = [bioIDBenchmark(method='gilda')]
-# BENCHMARKS: list[Dataset] = [bioIDBenchmark(method='gilda')]
-# BENCHMARKS: list[Dataset] = [BCD5(method='gilda')]
-# BENCHMARKS: list[Dataset] = [BCD5(method='krissbert')]
-# SCORES : list[Scorer] = [fuzzyStringScore(), sapbertScorer(), llmScorer()]
-MIN_CANDIDATES = [2]
-
-
-if __name__ == "__main__":
+def run_trials(
+    benchmarks: list[Dataset],
+    scores: list[Scorer],
+    losses: list[lossFunction],
+    target_proportion_risk: list[float] = [0.00, 0.01, 0.02, 0.05, 0.10, 0.20, 0.25],
+    risk_types: list[bool] = [False],
+    min_candidates: list[int] = [2],
+):
     itter = product(
-        BENCHMARKS,
-        SCORES,
-        LOSSES,
-        RISK_TYPES,
-        MIN_CANDIDATES,
-        TARGET_PROPORTIONAL_RISKS,
+        benchmarks,
+        scores,
+        losses,
+        risk_types,
+        min_candidates,
+        target_proportion_risk,
     )
-    os.makedirs("./figs", exist_ok=True)
-    records = []
     if os.path.exists("trials.tsv"):
-        df = pl.read_csv("trials.tsv", separator="\t")
+        results_df = pl.read_csv("trials.tsv", separator="\t")
     else:
-        df = None
+        results_df = None
+    records = []
     for dataset, score, loss, risk_type, min_candidate, target_risk in tqdm(
         itter, desc="Running trials"
     ):
@@ -83,69 +59,31 @@ if __name__ == "__main__":
             target_proportional_risk_increase=target_risk,
         )
         evaluator.execute()
-
-        calibration_summary, validation_summary = evaluator.results_summary
-        ## calibration
-        original_risk_calibration = calibration_summary.get("risk_original")
-        risk_controlled_calibration = calibration_summary.get("risk_controlled")
-        c_set_size_original_calibration = calibration_summary.get("c_set_size_original")
-        c_set_size_controlled_calibration = calibration_summary.get(
-            "c_set_size_controlled"
-        )
-        samples_calibration = calibration_summary.get("samples")
-        ## validation
-        original_risk_validation = validation_summary.get("risk_original")
-        risk_controlled_validation = validation_summary.get("risk_controlled")
-        c_set_size_original_validation = validation_summary.get("c_set_size_original")
-        c_set_size_controlled_validation = validation_summary.get(
-            "c_set_size_controlled"
-        )
-        samples_validation = validation_summary.get("samples")
-
-        orig = evaluator.result_validation_original
-        fitted = evaluator.result_validation_fitted
-        orig_candidates = orig["n_candidates"].to_numpy()
-        fitted_candidates = fitted["n_candidates"].to_numpy()
-
-        risk_name = "absolute" if risk_type else "relative"
-        loss_type = loss.name
-        ## add training information
-        records.append(
-            {
-                "dataset_name": f"{dataset.name}_{dataset.method}",
-                "split": "calibration",
-                "score": score.name,
-                "min_candidates": min_candidate,
-                "target_risk": target_risk,
-                "risk_type": risk_name,
-                "loss_name": loss_type,
-                "original_risk": original_risk_calibration,
-                "controlled_risk": risk_controlled_calibration,
-                "original_c_set_size": c_set_size_original_calibration,
-                "controlled_c_set_size": c_set_size_controlled_calibration,
-                "samples": samples_calibration,
-            }
-        )
-        records.append(
-            {
-                "dataset_name": f"{dataset.name}_{dataset.method}",
-                "split": "validation",
-                "score": score.name,
-                "min_candidates": min_candidate,
-                "target_risk": target_risk,
-                "risk_type": risk_name,
-                "loss_name": loss_type,
-                "original_risk": original_risk_validation,
-                "controlled_risk": risk_controlled_validation,
-                "original_c_set_size": c_set_size_original_validation,
-                "controlled_c_set_size": c_set_size_controlled_validation,
-                "samples": samples_validation,
-            }
-        )
-        ## incremental updates for the dataset
-        if df is not None:
-            update = pl.from_dicts(records, schema=df.schema)
-            df = df.vstack(update).unique()
+        records += evaluator.results_summary
+        # incremental updates for the dataset
+        if results_df is not None:
+            update = pl.from_dicts(records, schema=results_df.schema)
+            results_df = results_df.vstack(update).unique()
         else:
-            df = pl.from_dicts(records)
-        df.write_csv("trials.tsv", separator="\t")
+            results_df = pl.from_dicts(records)
+        results_df.write_csv("trials.tsv", separator="\t")
+
+
+if __name__ == "__main__":
+    scores = [MedCodErScorer(), sapbertScorer()]
+
+    losses = [binaryMisscoverageLoss()]
+    ## run trial for currently used method ##
+    run_trials(
+        benchmarks=[medCodERBenchmark(n_retrieved=20, billable=True, resplit=False)],
+        target_proportion_risk=[0.00],
+        scores=scores,
+        losses=losses,
+    )
+    ## run trials for new method with risk control ##
+    run_trials(
+        benchmarks=[medCodERBenchmark(n_retrieved=10, billable=True, resplit=True)],
+        target_proportion_risk=[0.00, 0.01, 0.02, 0.05, 0.10, 0.20, 0.25],
+        scores=scores,
+        losses=losses,
+    )
