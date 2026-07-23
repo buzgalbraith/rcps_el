@@ -72,18 +72,40 @@ def run_trials(
 if __name__ == "__main__":
     scores = [MedCodErScorer(), sapbertScorer()]
 
-    losses = [binaryMisscoverageLoss()]
+    losses = [binaryMisscoverageLoss(),]
+    # losses = [hitsAtK(1), hitsAtK(2), hitsAtK(5), hitsAtK(10)]
     ## run trial for currently used method ##
+    # run trials for new method with risk control ##
     run_trials(
-        benchmarks=[medCodERBenchmark(n_retrieved=20, billable=True, resplit=False)],
-        target_proportion_risk=[0.00],
-        scores=scores,
-        losses=losses,
-    )
-    ## run trials for new method with risk control ##
-    run_trials(
-        benchmarks=[medCodERBenchmark(n_retrieved=10, billable=True, resplit=True)],
+        benchmarks=[medCodERBenchmark(n_retrieved=20, billable=True, resplit=True,  method='medcoder-rerank')],
         target_proportion_risk=[0.00, 0.01, 0.02, 0.05, 0.10, 0.20, 0.25],
         scores=scores,
         losses=losses,
     )
+    # run_trials(
+    #     benchmarks=[medCodERBenchmark(n_retrieved=10, billable=True, resplit=False,  method='medcoder-rerank')],
+    #     target_proportion_risk=[0.00, 0.01, 0.02, 0.05, 0.10, 0.20, 0.25],
+    #     scores=scores,
+    #     losses=losses,
+    # )
+
+    # run_trials(
+    #     benchmarks=[medCodERBenchmark(n_retrieved=10, billable=True, resplit=True, method='medcoder-retrieve')],
+    #     target_proportion_risk=[0.00, 0.01, 0.02, 0.05, 0.10, 0.20, 0.25],
+    #     scores=scores,
+    #     losses=losses,
+    # )
+
+    # run_trials(
+    #     benchmarks=[medCodERBenchmark(n_retrieved=20, billable=True, resplit=False,  method='medcoder-rerank')],
+    #     target_proportion_risk=[0.00, 0.01, 0.02, 0.05, 0.10, 0.20, 0.25],
+    #     scores=scores,
+    #     losses=losses,
+    # )
+
+    # run_trials(
+    #     benchmarks=[medCodERBenchmark(n_retrieved=20, billable=True, resplit=True, method='medcoder-retrieve')],
+    #     target_proportion_risk=[0.00, 0.01, 0.02, 0.05, 0.10, 0.20, 0.25],
+    #     scores=scores,
+    #     losses=losses,
+    # )

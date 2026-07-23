@@ -23,12 +23,12 @@ class medCodERBenchmark(Dataset):
     processed_dataframe_path: Path = module.base.joinpath(
         "medcoder_billable_calibration.parquet"
     )
-    known_methods = ["medcoder"]
+    known_methods = ["medcoder-retrieve", "medcoder-rerank"]
 
     def __init__(
         self,
         seed: int = 100,
-        method: str = "medcoder",
+        method: str = "medcoder-retrieve",
         billable: bool = True,
         resplit: bool = False,
         n_retrieved: int = 20,
@@ -48,6 +48,10 @@ class medCodERBenchmark(Dataset):
         self.seed = seed
         self.billable_str = "billable" if billable else "full"
         self.n_retrieved = n_retrieved
+        if self.method.startswith("medcoder"):
+            self.mode = self.method.split("-")[1]
+        else:
+            self.mode = 'retrieve'
         self.resplit = resplit
         self.resplit_str = "_resplit" if self.resplit else ""
         self.name = f"MedCodER{self.resplit_str}_{self.billable_str}_{self.n_retrieved}_candidates"
@@ -73,10 +77,17 @@ class medCodERBenchmark(Dataset):
                     candidate_codes = []
                     candidate_scores = []
                     candidate_names = []
+                    rerank_scores = []
+                    rerank_codes = []
+                    rerank_names = []
                     for code, score, name in m.get("retrieved"):
                         candidate_codes.append(code)
                         candidate_scores.append(score)
                         candidate_names.append(name)
+                    for code, score, name in m.get("reranked"):
+                        rerank_codes.append(code)
+                        rerank_scores.append(score)
+                        rerank_names.append(name)
                     records.append(
                         {
                             "doc_id": doc_id,
@@ -85,6 +96,9 @@ class medCodERBenchmark(Dataset):
                             "match_names": candidate_names,
                             "match_curies": candidate_codes,
                             "match_scores": candidate_scores,
+                            "rerank_names": rerank_names,
+                            "rerank_curies": rerank_codes,
+                            "rerank_scores": rerank_scores,
                         }
                     )
         return pl.from_records(records).with_row_index()
@@ -135,14 +149,14 @@ class medCodERBenchmark(Dataset):
                 logger.warning(
                     f"{json_path} resplit into {calibration_path} and {validation_path}"
                 )
-
-        self.calibration_set = self._set_n_retrieved(
-            pl.read_parquet(output_path_map("calibration"))
-        )
-        self.validation_set = self._set_n_retrieved(
-            pl.read_parquet(output_path_map("validation"))
-        )
-
+        self.calibration_set = pl.read_parquet(output_path_map("calibration"))
+        self.validation_set = pl.read_parquet(output_path_map("validation"))
+        if self.mode == 'rerank':
+            self.calibration_set = self.calibration_set.drop(['match_names', 'match_curies', 'match_scores']).rename({"rerank_names" : 'match_names', "rerank_curies": 'match_curies', "rerank_scores":  'match_scores'})
+            self.validation_set = self.validation_set.drop(['match_names', 'match_curies', 'match_scores']).rename({"rerank_names" : 'match_names', "rerank_curies": 'match_curies', "rerank_scores":  'match_scores'})
+        ## get only k ## 
+        self.calibration_set = self._set_n_retrieved(self.calibration_set)
+        self.validation_set = self._set_n_retrieved(self.validation_set)
     def load_dataframe(self, dataframe_path=None):
         """Helper for loading: return the calibration set, or a parquet file if given."""
         if not dataframe_path:

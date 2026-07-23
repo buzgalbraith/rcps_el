@@ -188,7 +188,7 @@ def get_trail_subsets(
 if __name__ == "__main__":
     df = pl.read_csv("trials.tsv", separator="\t")
     ## need: dataset name ,method name, min samples, risk type, loss name, scores as a list.
-    dataset = medCodERBenchmark(n_retrieved=10, billable=True, resplit=True)
+    dataset = medCodERBenchmark(n_retrieved=20, method='medcoder-rerank', billable=True, resplit=False)
     scores = [MedCodErScorer(), sapbertScorer()]
     # scores = [ sapbertScorer()]
     loss = binaryMisscoverageLoss()
