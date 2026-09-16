@@ -21,8 +21,8 @@ class lossFunction(ABC):
         self.agg_method: Aggregator = (
             agg_method if agg_method else self.default_agg_method
         )
-        self.aggregator_name: str = self.agg_method.name
-        self.name = f"{self.name}_{self.aggregator_name}"
+        # self.aggregator_name: str = self.agg_method.name
+        # self.name = f"{self.name}_{self.aggregator_name}"
 
     def execute(
         self,

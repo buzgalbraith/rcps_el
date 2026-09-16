@@ -32,3 +32,12 @@ class safeMinAggregator(Aggregator):
         else:
             ## if there is no list
             return 1.0
+
+class safeMeanAggregator(Aggregator):
+    name = "safe_mean_aggregation"
+    
+    def execute(self, scores: list[float]) -> float:
+        if scores:  ## evaluates to false if empty list
+            return sum(scores)/len(scores)
+        else:
+            return 1.0

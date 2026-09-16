@@ -37,6 +37,7 @@ class BCD5(Dataset):
     def load_dataframe(self, dataframe_path: Path | None = None) -> pl.DataFrame:
         if dataframe_path is None:
             dataframe_path = self.original_dataframe_path
+        print(type(dataframe_path))
         return (
             pl.read_csv(dataframe_path, separator="\t")
             .with_columns(

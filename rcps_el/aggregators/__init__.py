@@ -1,1 +1,1 @@
-from .aggregators import Aggregator, safeMaxAggregator, safeMinAggregator
+from .aggregators import Aggregator, safeMaxAggregator, safeMinAggregator, safeMeanAggregator

@@ -17,10 +17,19 @@ import polars as pl
 from pystow import module
 import matplotlib
 
+from pathlib import Path
 from re import sub
 
 
-matplotlib.rcParams['svg.fonttype'] = 'none'
+## keep vector output editable in Illustrator: text stays as text (not paths),
+## nothing is rasterized, and fonts embed as editable type in SVG/PDF ##
+matplotlib.rcParams["svg.fonttype"] = "none"
+matplotlib.rcParams["pdf.fonttype"] = 42
+matplotlib.rcParams["ps.fonttype"] = 42
+matplotlib.rcParams["image.composite_image"] = False
+
+## write to figs dir ##
+FIGS_DIR = Path(__file__).resolve().parent.parent.parent / "figs"
 SCORES : list[Scorer] = [fuzzyStringScore(), gildaScorer(), sapbertScorer(), llmScorer(use_titles=False, batch_size=1)]
 LOSS : lossFunction = binaryMisscoverageLoss()
 BENCHMARK : Dataset = bioIDBenchmark(method='gilda')
@@ -74,7 +83,7 @@ def loss_label(name: str) -> str:
 
 def _style_axis(ax, title: str, ylabel: str):
     ax.set_title(title, fontsize=TITLE_SIZE, fontweight="bold")
-    ax.set_xlabel("Tolerated risk increase ($\delta$)", fontsize=LABEL_SIZE, fontweight="bold")
+    ax.set_xlabel("Tolerated risk increase (α)", fontsize=LABEL_SIZE, fontweight="bold")
     ax.set_ylabel(ylabel, fontsize=LABEL_SIZE, fontweight="bold")
     ax.tick_params(labelsize=TICK_SIZE)
     ax.grid(True, linestyle="--", linewidth=0.4, alpha=0.6)
@@ -102,7 +111,7 @@ def plot_risk_baselines(ax, risk_results):
         "--",
         color=BASELINE_COLORS["original"],
         linewidth=lw_bl,
-        label="Original model risk ( $R(0)$ ) ",
+        label="Original model risk ( R(0) ) ",
     )
     ax.plot(
         risk_targets,
@@ -110,7 +119,7 @@ def plot_risk_baselines(ax, risk_results):
         ":",
         color=BASELINE_COLORS["expected"],
         linewidth=lw_bl,
-        label="Max tolerated risk ($R(0)+\delta$)",
+        label="Max tolerated risk ( R(0) * (1 + α) )",
     )
 
 
@@ -186,7 +195,7 @@ def get_trail_subsets(
 
     bench_label = BENCHMARK_LABELS.get(benchmark.name, benchmark.name)
     suptitle = (
-        f"{benchmark.method.title()} risk control on {bench_label} benchmark across loss functions"
+        f"{benchmark.method.title()} risk control on {bench_label} benchmark across score functions"
     )
     fig.suptitle(suptitle, fontsize=SUPTITLE_SIZE, fontweight="bold")
 
@@ -206,12 +215,17 @@ def get_trail_subsets(
     )
 
     fig.tight_layout(rect=[0, 0.10, 1, 0.92])
-    if output_format == 'png':
-        plt.savefig(f"{benchmark.name}_binary_coverage.png", dpi=150, bbox_inches="tight")
-    elif output_format == "svg":
-        plt.savefig(f"{benchmark.name}_binary_coverage.svg", dpi=150, bbox_inches="tight", format='svg')
-    else:
+    ## pdf keeps text/vectors editable in Illustrator without the per-character
+    ## <tspan> and deep group nesting that bloat matplotlib's svg output ##
+    if output_format not in ("png", "svg", "pdf"):
         raise ValueError(f"{output_format} not recognized")
+
+    FIGS_DIR.mkdir(parents=True, exist_ok=True)
+    out_path = FIGS_DIR / f"{benchmark.name}_binary_coverage.{output_format}"
+    ## dpi only affects png rasters; svg is vector and ignores it ##
+    plt.savefig(out_path, dpi=150, bbox_inches="tight", format=output_format)
+    plt.close(fig)
+    print(f"wrote {out_path}")
     # fig.show()
 
 
@@ -236,5 +250,5 @@ if __name__ == "__main__":
         benchmark=BENCHMARK,
         scores=SCORES,
         loss=LOSS,
-        output_format='svg'
+        output_format='pdf'
     )

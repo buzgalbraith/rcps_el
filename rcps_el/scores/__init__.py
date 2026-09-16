@@ -5,3 +5,4 @@ from .gilda_scorer import gildaScorer
 from .krissbert_scorer import krissbertScorer
 from .llm_scorer import llmScorer
 from .MedCodErScorer import MedCodErScorer
+from .med_path_scorer import medPathScorer

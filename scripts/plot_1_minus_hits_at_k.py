@@ -2,26 +2,36 @@ import matplotlib.pyplot as plt
 import polars as pl
 
 DATASET_NAME = "BCD5_krissbert"
+DATASET_NAME = "MedPath_medpath"
+METRIC = 'Ancestors'
+# METRIC = 'Descendants'
+# METRIC = "Hierarchy"
 # DATASET_NAME = 'bioRED'
 # DATASET_NAME = 'BCD5'
 RISK_TYPE = "relative"
-MIN_SAMPLES = 20
-K_VALUES = [1, 2, 5, 10]
+MIN_SAMPLES = 2
+K_VALUES = [1, 3, 5, 10]
+
+
+# MIN_SAMPLES = 20
+# K_VALUES = [1, 2, 5, 10]
 
 SCORES = [
     ("fuzzy_string_scores", "Fuzzy string score"),
-    ("SapBERT_scores",      "SapBERT score"),
-    ("KrissBERT_scores",    "KrissBERT score"),
+    # ("SapBERT_scores",      "SapBERT score"),
+    ("MedPath Score",      "SapBERT score"),
+    # ("KrissBERT_scores",    "KrissBERT score"),
 ]
 
 
 def plot_k(subfig, k, calibration_res, validation_res, calibration_samples, validation_samples):
-    loss = f"Hits@{k} loss"
-    subfig.suptitle(f"1-Hits @ {k}", fontsize=13, fontweight="bold")
+    # loss = f"Hits@{k} loss"
+    loss = f"{METRIC}@{k} loss"
+    subfig.suptitle(f"1-{METRIC} @ {k}", fontsize=13, fontweight="bold")
     axes = subfig.subplots(2, 2)
-
     cal = calibration_res.filter(pl.col("loss_name").eq(loss))
     val = validation_res.filter(pl.col("loss_name").eq(loss))
+    
     risk_targets = cal["target_risk"].unique().sort()
 
     orig_risk_cal  = cal["original_risk"][0]
@@ -48,7 +58,8 @@ def plot_k(subfig, k, calibration_res, validation_res, calibration_samples, vali
         ax.plot(risk_targets, [orig_risk * (1 + tgt) for tgt in risk_targets],
                 ":", label="Expected risk")
         ax.set_xlabel("Target proportional risk increase")
-        ax.set_ylabel(f"Hits@{k} risk")
+        # ax.set_ylabel(f"Hits@{k} risk")
+        ax.set_ylabel(f"{METRIC}@{k} risk")
 
     axes[0][0].set_title(f"Calibration  (n = {calibration_samples})", fontsize=9)
     axes[0][1].set_title(f"Validation   (n = {validation_samples})",  fontsize=9)
@@ -84,7 +95,6 @@ if __name__ == "__main__":
           .filter(pl.col("min_candidates").eq(MIN_SAMPLES))
           .filter(pl.col("risk_type").eq(RISK_TYPE))
     )
-
     calibration_res = df.filter(pl.col("split").eq("calibration")).sort("target_risk")
     validation_res  = df.filter(pl.col("split").eq("validation")).sort("target_risk")
     calibration_samples = calibration_res["samples"][0]
@@ -107,5 +117,5 @@ if __name__ == "__main__":
     fig.legend(
         handles, labels,
     )
-    plt.savefig(f"{DATASET_NAME}_hits_at_k.png", dpi=150, bbox_inches="tight")
+    plt.savefig(f"{DATASET_NAME}_{METRIC}_at_k.png", dpi=150, bbox_inches="tight")
     fig.show()

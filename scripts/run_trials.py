@@ -4,6 +4,7 @@ from rcps_el.dataset import (
     bioRedBenchmark,
     BCD5,
     medCodERBenchmark,
+    medPathBenchmark,
     Dataset,
 )
 from rcps_el.scores import (
@@ -13,9 +14,11 @@ from rcps_el.scores import (
     krissbertScorer,
     llmScorer,
     MedCodErScorer,
+    medPathScorer,
     Scorer,
 )
-from rcps_el.losses import binaryMisscoverageLoss, hitsAtK, lossFunction
+from rcps_el.losses import binaryMisscoverageLoss, hitsAtK, ancestorsAtK, descendantsAtK, hierarchyAtK, lossFunction
+from rcps_el.aggregators import safeMeanAggregator
 
 # from rcps_el.dataset.bioIDGilda import bioIDGildaBenchmark
 
@@ -26,9 +29,11 @@ import os
 import polars as pl
 
 # BENCHMARKS: list[Dataset] = [BCD5(), bioIDBenchmark(), bioRedBenchmark()]
-BENCHMARKS: list[Dataset] = [medCodERBenchmark()]
-
-SCORES: list[Scorer] = [MedCodErScorer()]
+# BENCHMARKS: list[Dataset] = [medCodERBenchmark()]
+BENCHMARKS: list[Dataset] = [medPathBenchmark()]
+# sapbertScorer()
+SCORES: list[Scorer] = [medPathScorer(), fuzzyStringScore()]
+# SCORES: list[Scorer] = [MedCodErScorer()]
 # SCORES: list[Scorer] = [fuzzyStringScore(), gildaScorer(), sapbertScorer()]
 
 # SCORES: list[Scorer] = [llmScorer(batch_size=1)]
@@ -38,10 +43,22 @@ SCORES: list[Scorer] = [MedCodErScorer()]
 # MIN_CANDIDATES = [2, 5, 10]
 
 TARGET_PROPORTIONAL_RISKS = [0.00, 0.01, 0.02, 0.05, 0.10, 0.20, 0.25]
+# TARGET_PROPORTIONAL_RISKS = [0.00, 0.01]
 
 
 RISK_TYPES = [False]
-LOSSES: list[lossFunction] = [hitsAtK(k_size=5)]
+# LOSSES: list[lossFunction] = [hitsAtK(k_size=5)]
+agg_method = safeMeanAggregator()
+# LOSSES: list[lossFunction] = [ancestorsAtK(k_size=5, agg_method=agg_method)]
+# LOSSES: list[lossFunction] = [descendantsAtK(k_size=5, agg_method=agg_method)]
+k_candidates = True
+LOSSES: list[lossFunction] = [
+                                ancestorsAtK(k_size=1, k_candidates=k_candidates), ancestorsAtK(k_size=3, k_candidates=k_candidates), ancestorsAtK(k_size=5, k_candidates=k_candidates), ancestorsAtK(k_size = 10, k_candidates = k_candidates),
+                                descendantsAtK(k_size=1, k_candidates=k_candidates), descendantsAtK(k_size=3, k_candidates=k_candidates), descendantsAtK(k_size=5, k_candidates=k_candidates), descendantsAtK(k_size = 10, k_candidates = k_candidates),
+                                descendantsAtK(k_size=1, k_candidates=k_candidates), descendantsAtK(k_size=3, k_candidates=k_candidates), descendantsAtK(k_size=5, k_candidates=k_candidates), descendantsAtK(k_size = 10, k_candidates = k_candidates),
+                                hierarchyAtK(k_size=1, k_candidates=k_candidates), hierarchyAtK(k_size=3, k_candidates=k_candidates), hierarchyAtK(k_size=5, k_candidates=k_candidates), hierarchyAtK(k_size = 10, k_candidates = k_candidates),
+                                ]
+# LOSSES: list[lossFunction] = [descendantsAtK(k_size=5)]
 
 # LOSSES: list[lossFunction] = [hitsAtK(k_size=1), hitsAtK(k_size=2), hitsAtK(k_size=5), hitsAtK(k_size=10)]
 # LOSSES: list[lossFunction] = [binaryMisscoverageLoss()]
@@ -119,6 +136,7 @@ if __name__ == "__main__":
                 "target_risk": target_risk,
                 "risk_type": risk_name,
                 "loss_name": loss_type,
+                "aggregation_method" : loss.agg_method.name,
                 "original_risk": original_risk_calibration,
                 "controlled_risk": risk_controlled_calibration,
                 "original_c_set_size": c_set_size_original_calibration,
@@ -135,6 +153,7 @@ if __name__ == "__main__":
                 "target_risk": target_risk,
                 "risk_type": risk_name,
                 "loss_name": loss_type,
+                "aggregation_method" : loss.agg_method.name,
                 "original_risk": original_risk_validation,
                 "controlled_risk": risk_controlled_validation,
                 "original_c_set_size": c_set_size_original_validation,

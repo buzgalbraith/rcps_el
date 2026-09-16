@@ -3,3 +3,4 @@ from .bioIDBenchmark import bioIDBenchmark
 from .bioRedBenchmark import bioRedBenchmark
 from .BCD5 import BCD5
 from .medCodERBenchmark import medCodERBenchmark
+from .medPathBenchmark import medPathBenchmark
