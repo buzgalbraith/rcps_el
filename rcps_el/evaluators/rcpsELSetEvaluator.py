@@ -20,6 +20,9 @@ DEFAULT_RESULT = RESULTS_BASE.joinpath("rcps_el_results_summary.tsv")
 
 
 class rcpsELSetEvaluator:
+    ## identity of a trial, used to de-duplicate against cached results. The
+    ## risk-control settings belong here: the same dataset/score/loss at a
+    ## different delta or bound is a different trial, not a duplicate.
     summary_cols = [
         "dataset",
         "split",
@@ -28,6 +31,9 @@ class rcpsELSetEvaluator:
         "evaluation_strategy",
         "score_function",
         "loss_function",
+        "delta",
+        "bound",
+        "risk_unit",
     ]
 
     def __init__(
@@ -47,6 +53,9 @@ class rcpsELSetEvaluator:
         ],
         risk_types: list[bool] = [False],
         min_candidates: list[int] = [2],
+        delta: float = 0.1,
+        bound: str = "wsr",
+        risk_unit: str = "document",
     ) -> None:
         self.evaluators: list[rcpsELEvaluator] = []
         self.benchmarks = benchmarks
@@ -55,6 +64,10 @@ class rcpsELSetEvaluator:
         self.risk_types = risk_types
         self.min_candidates = min_candidates
         self.target_proportion_risk = target_proportion_risk
+        ## risk-control settings, forwarded to every evaluator ##
+        self.delta = delta
+        self.bound = bound
+        self.risk_unit = risk_unit
         self.result_set: pl.DataFrame | None = None
         self.results_path = (
             results_path if isinstance(results_path, Path) else Path(DEFAULT_RESULT)
@@ -98,6 +111,9 @@ class rcpsELSetEvaluator:
                 min_candidates=min_candidate,
                 absolute_risk=risk_type,
                 target_proportional_risk_increase=target_risk,
+                delta=self.delta,
+                bound=self.bound,
+                risk_unit=self.risk_unit,
             )
             evaluator.execute(verbose=verbose)
             self.evaluators.append(evaluator)

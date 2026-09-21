@@ -7,6 +7,10 @@ class hitsAtK(lossFunction):
     candidate_curie_col = "match_curies"
     default_agg_method: Aggregator = safeMinAggregator()
     name = ""
+    ## always slices to the top k, so filtering can change what lands in the
+    ## slice unless the list is already ordered by the score being thresholded ##
+    monotone_in_threshold = False
+    monotone_when_score_ordered = True
 
     def __init__(
         self,

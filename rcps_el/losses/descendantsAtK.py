@@ -19,6 +19,12 @@ class descendantsAtK(hierarchicalLossFunction):
         self.k_size = k_size
         self.k_candidates:bool = k_candidates
         self.name = f"Descendants@{k_size} loss"
+        ## k is hierarchy depth, not a candidate slice, unless k_candidates is set.
+        ## Without the slice, shrinking the candidate set can only raise the loss. ##
+        self.monotone_in_threshold = not k_candidates
+        ## With the slice, monotonicity still holds if the candidate list is
+        ## ordered by the score being thresholded. ##
+        self.monotone_when_score_ordered = True
 
     def calc_loss(self, labels: list[str], candidate_set: list[str]) -> float:
         ## filter for only UMLS labels ## 
