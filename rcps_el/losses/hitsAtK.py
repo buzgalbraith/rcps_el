@@ -7,10 +7,6 @@ class hitsAtK(lossFunction):
     candidate_curie_col = "match_curies"
     default_agg_method: Aggregator = safeMinAggregator()
     name = ""
-    ## always slices to the top k, so filtering can change what lands in the
-    ## slice unless the list is already ordered by the score being thresholded ##
-    monotone_in_threshold = False
-    monotone_when_score_ordered = True
 
     def __init__(
         self,
@@ -26,6 +22,3 @@ class hitsAtK(lossFunction):
             float(label not in candidate_set[: self.k_size]) for label in labels
         ]
         return self.agg_method.execute(term_losses)
-
-    def processing_function(self, data_frame: pl.DataFrame):
-        return super().processing_function(data_frame)

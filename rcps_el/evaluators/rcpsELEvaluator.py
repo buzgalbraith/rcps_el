@@ -33,8 +33,8 @@ class rcpsELEvaluator:
         dataset: Dataset,
         score_function: Scorer,
         loss_function: lossFunction,
-        target_proportional_risk_increase: float = 0.2,
-        absolute_risk: bool = False,
+        target_risk: float = 0.2,
+        risk_formulation: str = 'relative',
         min_candidates: int = 2,
         max_q: int | float | None = None,
         min_q: int | float | None = None,
@@ -45,11 +45,12 @@ class rcpsELEvaluator:
     ) -> None:
         """Make an evaluator
         Parameters:
-            target_proportional_risk_increase : optional,float
-                Max allowable % change increase in risk. This is the alpha of the
-                RCPS guarantee.
-            absolute_risk : optional, bool
-                If to calculate risk over all samples or just those grounded to more than min_candidates candidates
+            target_risk : optional,float
+                Max allowable % change increase in risk in relative formualation.
+                Max allowable overall risk in the absolute formulation. This is 
+                the alpha of the RCPS guarantee.
+            risk_formulation : optional, str
+                either to control absolute or relative risk
             min_candidates : optional, int
                 Minimum number of candidates to try to narrow candidate set for
             min_q, max_q : optional, float
@@ -77,8 +78,10 @@ class rcpsELEvaluator:
         self.dataset = dataset
         self.score_function = score_function
         self.loss_function = loss_function
-        self.target_proportional_risk_increase = target_proportional_risk_increase
-        self.absolute_risk = absolute_risk
+        self.target_risk = target_risk
+        self.risk_formulation = risk_formulation.lower()
+        assert self.risk_formulation in ['absolute', 'relative'], AssertionError("Risk formulation must either be absolute or relative")
+        
         self.min_candidates = min_candidates
         if not 0.0 < delta < 1.0:
             raise ValueError(f"delta must be in (0, 1); got {delta}.")
@@ -105,16 +108,11 @@ class rcpsELEvaluator:
         self.result_validation_original = self.get_original_results(
             self.dataset.validation_set
         )
+
         ## find range of possible score threshold (q), with granularity based on original risk ##
         self.q_range = self.build_q_range(
             min_q=min_q, max_q=max_q, num_steps=num_steps
         )
-        ## current pipeline assumes that candidate ordering is based on score function used for threshing, so verify this is the case ##
-        self.result_validation_original = self.sort_by_scores(self.result_validation_original)
-        self.result_calibration_original = self.sort_by_scores(self.result_calibration_original)
-        self.scores_sorted = self.scores_descending(
-            self.result_calibration_original
-        ) and self.scores_descending(self.result_validation_original)
         ## keep only rows that have above a fixed number of possible candidates ##
         self.calibration_risk_index = self.get_risk_index(
             self.result_calibration_original
@@ -131,7 +129,6 @@ class rcpsELEvaluator:
         self.result_validation_fitted: pl.DataFrame | None = None
         self.q_star_certified: bool | None = None
         self.q_star_risk_ucb: float | None = None
-        self.delta_per_test: float | None = None
 
     def execute(
         self,
@@ -195,12 +192,17 @@ class rcpsELEvaluator:
         return finite_grid + [Q_0]
 
     def get_risk_index(self, dataset: pl.DataFrame):
-        if self.absolute_risk:
-            return dataset["index"].unique()
-        else:
-            return dataset.filter(pl.col("n_candidates") >= self.min_candidates)[
-                "index"
-            ].unique()
+        """
+        Which mentions the risk is averaged over, and so which ones the bound is
+        computed on.
+
+        Every mention counts. R(q) in both 4.1 and 4.2 is a population
+        expectation with no conditioning, so restricting this to mentions with at
+        least min_candidates candidates would certify a different quantity than
+        the one the guarantee is stated over. min_candidates governs narrowing
+        only, in _filter_candidates.
+        """
+        return dataset["index"].unique()
 
     def guarantee_summary(self, calibration: bool) -> dict:
         """
@@ -224,10 +226,6 @@ class rcpsELEvaluator:
             "delta": self.delta,
             "bound": self.bound,
             "risk_unit": self.risk_unit,
-            "loss_monotone_in_threshold": self.loss_function.monotone_in_threshold,
-            "scores_score_ordered": self.scores_sorted,
-            "risk_treated_as_monotone": self.risk_is_monotone(),
-            "delta_per_test": _or_nan(self.delta_per_test),
             "q_star": self.q_star,
             "q_star_certified": self.q_star_certified,
             "risk_bound_at_q_star": _or_nan(self.q_star_risk_ucb),
@@ -247,9 +245,9 @@ class rcpsELEvaluator:
             {
                 "dataset": self.dataset.name,
                 "split": "calibration",
-                "target_proportional_risk_increase": self.target_proportional_risk_increase,
+                "target_risk": self.target_risk,
                 "min_candidates": self.min_candidates,
-                "evaluation_strategy": "absolute" if self.absolute_risk else "relative",
+                "risk_formulation" : self.risk_formulation,
                 "score_function": self.score_function.name,
                 "loss_function": self.loss_function.name,
                 "samples": len(self.calibration_risk_index),
@@ -273,9 +271,9 @@ class rcpsELEvaluator:
             {
                 "dataset": self.dataset.name,
                 "split": "validation",
-                "target_proportional_risk_increase": self.target_proportional_risk_increase,
+                "target_risk": self.target_risk,
                 "min_candidates": self.min_candidates,
-                "evaluation_strategy": "absolute" if self.absolute_risk else "relative",
+                "risk_formulation" : self.risk_formulation,
                 "score_function": self.score_function.name,
                 "loss_function": self.loss_function.name,
                 "samples": len(self.validation_risk_index),
@@ -295,10 +293,6 @@ class rcpsELEvaluator:
             }
         )
         logger.info(f"Calibration samples {len(self.result_calibration_original)}")
-        if not self.absolute_risk:
-            logger.info(
-                f"Calibration samples with at least {self.min_candidates}: {len(self.calibration_risk_index)}"
-            )
         logger.info(
             f"Calibration risk: {self.calc_empirical_risk(self.result_calibration_original, calibration=True)}->{self.calc_empirical_risk(self.result_calibration_fitted,calibration=True)}"
         )
@@ -307,10 +301,6 @@ class rcpsELEvaluator:
         )
         logger.info("-" * 100)
         logger.info(f"Validation samples {len(self.result_validation_original)}")
-        if not self.absolute_risk:
-            logger.info(
-                f"Validation samples with at least {self.min_candidates}: {len(self.validation_risk_index)}"
-            )
         logger.info(
             f"Validation risk: {self.calc_empirical_risk(self.result_validation_original,calibration=False)}->{self.calc_empirical_risk(self.result_validation_fitted,calibration=False)}"
         )
@@ -332,8 +322,9 @@ class rcpsELEvaluator:
         )
 
     def get_original_results(self, dataset: pl.DataFrame):
-        """Get metrics on the original dataframe"""
+        """Get metrics on the original dataframe and sort by score"""
         dataset = self.score_function.execute(dataset)
+        dataset = self.sort_by_scores(dataset)
         dataset = self.loss_function.execute(dataset)
         return self.count_candidates(dataset)
 
@@ -383,61 +374,20 @@ class rcpsELEvaluator:
 
     def sort_by_scores(self, dataset: pl.DataFrame) -> pl.DataFrame:
         """
-        Sort scores 
+        sort match names, curies and scores in descending order according to the score value.
         """
-        sort_idx = pl.col(self.score_function.name).list.eval(pl.element().arg_sort(descending=True))
+        target = self.score_function.name
+        ## get sort index and make sure null safe ## 
+        sort_idx = pl.col(target).list.eval(
+            pl.element().arg_sort(descending=True, nulls_last=True)
+        )
+
         return dataset.with_columns([
-            pl.col(self.score_function.name).list.gather(sort_idx).alias(self.score_function.name),
+            pl.col(target).list.gather(sort_idx).alias(target),
             pl.col("match_scores").list.gather(sort_idx).alias("match_scores"),
             pl.col("match_names").list.gather(sort_idx).alias("match_names"),
             pl.col("match_curies").list.gather(sort_idx).alias("match_curies"),
         ])
-
-
-    def scores_descending(self, dataset: pl.DataFrame) -> bool:
-        """
-        Whether every candidate list is ordered by descending score.
-
-        When it holds, `score >= q` keeps a prefix of each list, so a loss that
-        slices the top k sees a slice that can only shrink as q rises, which makes
-        the loss monotone and lets the fixed-sequence argument spend the full
-        delta per threshold. Passthrough scorers satisfy this when they read back
-        the score that produced the ranking (medPathScorer, or krissbertScorer on
-        BCD5(method="krissbert")); independently computed scorers such as
-        fuzzyStringScore or sapbertScorer generally do not.
-
-        Requires *every* row: a handful of unordered lists means the property is
-        not structural and the correction is genuinely needed.
-        """
-
-
-        for scores in dataset[self.score_function.name].to_list():
-            if scores is None or len(scores) < 2:
-                continue
-            previous = None
-            for score in scores:
-                ## a missing score cannot be placed in the order at all ##
-                if score is None:
-                    return False
-                if previous is not None and score > previous + 1e-12:
-                    return False
-                previous = score
-        return True
-
-    def risk_is_monotone(self) -> bool:
-        """
-        Whether the risk can be treated as monotone in the threshold.
-
-        Either the loss is monotone however the candidates are ordered, or it
-        slices the top k but the candidate lists are score-ordered on both splits.
-        """
-        ## check for loss functions that are always monotone ## 
-        if self.loss_function.monotone_in_threshold:
-            return True
-        ## if monotonicity requires that the scores are ordered verify that is the case ## 
-        if not self.loss_function.monotone_when_score_ordered:
-            return False
-        return self.scores_sorted
 
     def fit_at(self, q: float, dataset: pl.DataFrame) -> pl.DataFrame:
         """Apply threshold q then recompute the loss and candidate counts"""
@@ -449,11 +399,10 @@ class rcpsELEvaluator:
         self,
         fitted: pl.DataFrame,
         base_losses: np.ndarray,
-        delta_per_test: float,
     ) -> tuple[bool, float]:
         """
         Test the proportional risk constraint at one threshold against a
-        (1 - delta_per_test) upper confidence bound.
+        (1 - delta) upper confidence bound.
 
         The constraint R(q) <= (1 + alpha) R(q0) has a *random* right hand side,
         since R(q0) is estimated on the same calibration set. Bounding the
@@ -478,11 +427,16 @@ class rcpsELEvaluator:
                 "Fitted and baseline risk samples are misaligned "
                 f"({fitted_losses.shape} vs {base_losses.shape})."
             )
-        alpha = self.target_proportional_risk_increase
-        z = fitted_losses - (1.0 + alpha) * base_losses
-        u = (z + 1.0 + alpha) / (2.0 + alpha)
-        u_max = (1.0 + alpha) / (2.0 + alpha)
-        ucb = mean_ucb(u, delta_per_test, method=self.bound)
+        alpha = self.target_risk
+        ## if in absolute formulation do normal RCPS ## 
+        if self.risk_formulation == "absolute":
+            u,u_max = fitted_losses, alpha
+        ## otherwise control relative risk increase ## 
+        else:
+            z = fitted_losses - (1.0 + alpha) * base_losses
+            u = (z + 1.0 + alpha) / (2.0 + alpha)
+            u_max = (1.0 + alpha) / (2.0 + alpha)
+        ucb = mean_ucb(u, self.delta, method=self.bound)
         return bool(ucb <= u_max), float(ucb)
 
     def evaluate_on_validation(
@@ -505,45 +459,24 @@ class rcpsELEvaluator:
             logger.info(f"q star loading from cache...")
             return self.q_star
         ## check if no risk control should be done ##
-        if self.target_proportional_risk_increase == 0:
-            logging.info("Not controlling risk in this case")
-            self.q_star = Q_0
-            self.result_calibration_fitted = self.fit_at(
-                q=self.q_star, dataset=self.result_calibration_original
-            )
-            self.q_star_certified = True
-            self.q_star_risk_ucb = None
-            return self.q_star
+        # if self.target_risk == 0 and self.risk_formulation == 'relative':
+        #     logging.info("Not controlling risk in this case")
+        #     self.q_star = Q_0
+        #     self.result_calibration_fitted = self.fit_at(
+        #         q=self.q_star, dataset=self.result_calibration_original
+        #     )
+        #     self.q_star_certified = False
+        #     self.q_star_risk_ucb = None
+        #     return self.q_star
 
         base_losses = self.risk_sample(
             self.result_calibration_original, calibration=True
         )
         finite_grid = [q for q in self.q_range if q > Q_0]
-        ## verify that the risk function can be treated as monotone ##
-        monotone = self.risk_is_monotone()
-        # if not monotone:
-        #     raise RuntimeError(
-        #         "Can not verify that this risk function is monotone. The risk function must either always be monotone or be monotone given candidates are ordered by conformal score"
-        #     )           
-        if monotone:
-            delta_per_test = self.delta
-            why = (
-                "monotone loss"
-                if self.loss_function.monotone_in_threshold
-                else "top-k loss over score-ordered candidate lists"
-            )
-            strategy = f"fixed-sequence, {why}"
-        else:
-            delta_per_test = self.delta / max(len(finite_grid), 1)
-            strategy = (
-                f"Bonferroni over {len(finite_grid)} grid points, non-monotone loss"
-                f" (scores_sorted={self.scores_sorted})"
-            )
-        self.delta_per_test = delta_per_test
         logger.info(
-            f"Selecting q* against a {1 - delta_per_test:.5g} upper confidence bound "
+            f"Selecting q* against a {1 - self.delta:.5g} upper confidence bound "
             f"({self.bound}) on the {self.risk_unit}-level risk; "
-            f"delta={self.delta}, {strategy}; "
+            f"delta={self.delta}; "
             f"n_{self.risk_unit}s={len(base_losses)}."
         )
 
@@ -552,12 +485,8 @@ class rcpsELEvaluator:
         self.q_star_risk_ucb = None
         self.result_calibration_fitted = self.result_calibration_original
 
-        if monotone:
-            scan = list(reversed(finite_grid))
-        else:
-            ## Bonferroni covers every point at once, so take the strictest that
-            ## passes and stop there ##
-            scan = list(finite_grid)
+
+        scan = list(reversed(finite_grid))
 
         progress = tqdm(
             scan,
@@ -573,7 +502,6 @@ class rcpsELEvaluator:
             certified, ucb = self.certify(
                 fitted=fitted,
                 base_losses=base_losses,
-                delta_per_test=delta_per_test,
             )
             if verbose:
                 empirical_risk = self.calc_empirical_risk(fitted, calibration=True)
@@ -587,19 +515,14 @@ class rcpsELEvaluator:
                 self.q_star_certified = True
                 self.q_star_risk_ucb = ucb
                 self.result_calibration_fitted = fitted
-                if not monotone:
-                    break
             else:
-                if monotone:
-                    ## the run of certified thresholds from the loose end ends
-                    ## here; anything stricter is not covered by the argument ##
-                    break
+                break
 
         if not self.q_star_certified:
             logger.warning(
                 f"No threshold could be certified at delta={self.delta} for "
                 f"target proportional risk increase "
-                f"{self.target_proportional_risk_increase} with "
+                f"{self.target_risk} with "
                 f"{len(base_losses)} {self.risk_unit}s. Falling back to the "
                 "unfiltered candidate set, which satisfies the constraint "
                 "trivially. Raise the target, raise delta, or calibrate on more "
@@ -653,10 +576,7 @@ class rcpsELEvaluator:
         ## short circuit so do not filter any candidate sets smaller than our min target ##
         if len(scores) < self.min_candidates:
             q = Q_0
-        max_score_index = 0
         for i, score in enumerate(scores):
-            if score > scores[max_score_index]:
-                max_score_index = i
             if score < q:
                 continue
             records.append({"name": names[i], "curie": curies[i], "score": scores[i]})
@@ -664,9 +584,9 @@ class rcpsELEvaluator:
         if len(records) < 1 and len(scores) > 0:
             records.append(
                 {
-                    "name": names[max_score_index],
-                    "curie": curies[max_score_index],
-                    "score": scores[max_score_index],
+                    "name": names[0],
+                    "curie": curies[0],
+                    "score": scores[0],
                 }
             )
         return records

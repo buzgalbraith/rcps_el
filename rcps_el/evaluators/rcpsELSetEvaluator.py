@@ -26,9 +26,9 @@ class rcpsELSetEvaluator:
     summary_cols = [
         "dataset",
         "split",
-        "target_proportional_risk_increase",
+        "target_risk",
         "min_candidates",
-        "evaluation_strategy",
+        "risk_formulation",
         "score_function",
         "loss_function",
         "delta",
@@ -42,7 +42,7 @@ class rcpsELSetEvaluator:
         scores: list[Scorer],
         losses: list[lossFunction],
         results_path: Path,
-        target_proportion_risk: list[float] = [
+        target_risks: list[float] = [
             0.00,
             0.01,
             0.02,
@@ -51,7 +51,7 @@ class rcpsELSetEvaluator:
             0.20,
             0.25,
         ],
-        risk_types: list[bool] = [False],
+        risk_formulations: list[str] = ["relative"],
         min_candidates: list[int] = [2],
         delta: float = 0.1,
         bound: str = "wsr",
@@ -61,9 +61,9 @@ class rcpsELSetEvaluator:
         self.benchmarks = benchmarks
         self.scores = scores
         self.losses = losses
-        self.risk_types = risk_types
+        self.risk_formulations = risk_formulations
         self.min_candidates = min_candidates
-        self.target_proportion_risk = target_proportion_risk
+        self.target_risks = target_risks
         ## risk-control settings, forwarded to every evaluator ##
         self.delta = delta
         self.bound = bound
@@ -79,17 +79,17 @@ class rcpsELSetEvaluator:
             self.benchmarks,
             self.scores,
             self.losses,
-            self.risk_types,
+            self.risk_formulations,
             self.min_candidates,
-            self.target_proportion_risk,
+            self.target_risks,
         )
         total = (
             len(self.benchmarks)
             * len(self.scores)
             * len(self.losses)
-            * len(self.risk_types)
+            * len(self.risk_formulations)
             * len(self.min_candidates)
-            * len(self.target_proportion_risk)
+            * len(self.target_risks)
         )
         records = []
         progress = tqdm(
@@ -98,10 +98,10 @@ class rcpsELSetEvaluator:
             desc="Evaluating RCPS entity-linking configurations",
             unit="config",
         )
-        for dataset, score, loss, risk_type, min_candidate, target_risk in progress:
+        for dataset, score, loss, risk_formulation, min_candidate, target_risk in progress:
             progress.set_postfix_str(
                 f"data={dataset.name} score={score.name} loss={loss.name} "
-                f"risk={'abs' if risk_type else 'prop'} "
+                f"risk={risk_formulation} "
                 f"min_cand={min_candidate} target_risk={target_risk}"
             )
             evaluator = rcpsELEvaluator(
@@ -109,8 +109,8 @@ class rcpsELSetEvaluator:
                 score_function=score,
                 loss_function=loss,
                 min_candidates=min_candidate,
-                absolute_risk=risk_type,
-                target_proportional_risk_increase=target_risk,
+                risk_formulation=risk_formulation,
+                target_risk=target_risk,
                 delta=self.delta,
                 bound=self.bound,
                 risk_unit=self.risk_unit,
