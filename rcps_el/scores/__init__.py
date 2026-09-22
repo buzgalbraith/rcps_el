@@ -6,3 +6,5 @@ from .krissbert_scorer import krissbertScorer
 from .llm_scorer import llmScorer
 from .MedCodErScorer import MedCodErScorer
 from .med_path_scorer import medPathScorer
+from .retrievalScorer import retrievalScorer
+from .cumulativeRetrievalScorer import cumulativeRetrievalScorer

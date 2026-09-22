@@ -21,7 +21,7 @@ Q_0: float = float("-inf")
 
 
 def _or_nan(value: float | None) -> float:
-    """Keep optional numeric summary fields on a stable float schema"""
+    """Helper keeps optional columns numeric in Polars schema"""
     return float("nan") if value is None else float(value)
 
 
@@ -64,8 +64,8 @@ class rcpsELEvaluator:
             bound : optional, str
                 Which upper confidence bound to select against. "wsr" (default,
                 tightest here), "hoeffding_bentkus" (the bound in the RCPS paper),
-                or "empirical" which reproduces the old unbounded behaviour and
-                carries no guarantee.
+                or "empirical" that is just empirical risk increase which will
+                not provide finite sample coverage guarantees.
             risk_unit : optional, str
                 The unit the concentration bound treats as i.i.d. Splits are by
                 document, and mentions inside one document are correlated, so
@@ -98,35 +98,37 @@ class rcpsELEvaluator:
                 "bound='empirical' selects on the empirical risk and provides no "
                 "1 - delta guarantee; results are not risk controlled."
             )
+        ## get original scores losses and candidate set sizes on calibration and validation set ##
         self.result_calibration_original = self.get_original_results(
             self.dataset.calibration_set
         )
         self.result_validation_original = self.get_original_results(
             self.dataset.validation_set
         )
-        ## grid needs the scores, so it is built after the originals are scored ##
+        ## find range of possible score threshold (q), with granularity based on original risk ##
         self.q_range = self.build_q_range(
             min_q=min_q, max_q=max_q, num_steps=num_steps
         )
-        ## checked on both splits: the ordering has to be a structural property of
-        ## the pipeline, not a quirk of the calibration draw ##
+        ## current pipeline assumes that candidate ordering is based on score function used for threshing, so verify this is the case ##
+        self.result_validation_original = self.sort_by_scores(self.result_validation_original)
+        self.result_calibration_original = self.sort_by_scores(self.result_calibration_original)
         self.scores_sorted = self.scores_descending(
             self.result_calibration_original
         ) and self.scores_descending(self.result_validation_original)
+        ## keep only rows that have above a fixed number of possible candidates ##
         self.calibration_risk_index = self.get_risk_index(
             self.result_calibration_original
         )
         self.validation_risk_index = self.get_risk_index(
             self.result_validation_original
         )
+        ## get the uncalibrated risk for the calibration set R(q_{0}) ##
         self.original_empirical_risk = self.calc_empirical_risk(
             self.result_calibration_original, calibration=True
         )
         self.q_star: float | None = None
         self.result_calibration_fitted: pl.DataFrame | None = None
         self.result_validation_fitted: pl.DataFrame | None = None
-        ## set by get_q_star: whether q_star carries a statistical certificate, the
-        ## bound value that certified it, and the per-test delta actually spent ##
         self.q_star_certified: bool | None = None
         self.q_star_risk_ucb: float | None = None
         self.delta_per_test: float | None = None
@@ -189,6 +191,7 @@ class rcpsELEvaluator:
             (float(q) for q in linspace(start=grid_min, stop=grid_max, num=num_steps)),
             reverse=True,
         )
+        ## return grid as well as our uncalibrated value threshold q_0 ## 
         return finite_grid + [Q_0]
 
     def get_risk_index(self, dataset: pl.DataFrame):
@@ -201,7 +204,7 @@ class rcpsELEvaluator:
 
     def guarantee_summary(self, calibration: bool) -> dict:
         """
-        The risk-control settings and the realised risk on the unit the bound was
+        The risk-control settings and the realized risk on the unit the bound was
         computed over.
 
         `risk_original`/`risk_controlled` stay pooled over mentions so existing
@@ -224,9 +227,6 @@ class rcpsELEvaluator:
             "loss_monotone_in_threshold": self.loss_function.monotone_in_threshold,
             "scores_score_ordered": self.scores_sorted,
             "risk_treated_as_monotone": self.risk_is_monotone(),
-            ## NaN rather than None for the optional numerics: a None makes polars
-            ## infer an all-null column as String, which then fails to stack against
-            ## a later trial that did compute a bound ##
             "delta_per_test": _or_nan(self.delta_per_test),
             "q_star": self.q_star,
             "q_star_certified": self.q_star_certified,
@@ -381,6 +381,19 @@ class rcpsELEvaluator:
         )
         return rows[loss_col].to_numpy().astype(float)
 
+    def sort_by_scores(self, dataset: pl.DataFrame) -> pl.DataFrame:
+        """
+        Sort scores 
+        """
+        sort_idx = pl.col(self.score_function.name).list.eval(pl.element().arg_sort(descending=True))
+        return dataset.with_columns([
+            pl.col(self.score_function.name).list.gather(sort_idx).alias(self.score_function.name),
+            pl.col("match_scores").list.gather(sort_idx).alias("match_scores"),
+            pl.col("match_names").list.gather(sort_idx).alias("match_names"),
+            pl.col("match_curies").list.gather(sort_idx).alias("match_curies"),
+        ])
+
+
     def scores_descending(self, dataset: pl.DataFrame) -> bool:
         """
         Whether every candidate list is ordered by descending score.
@@ -396,6 +409,8 @@ class rcpsELEvaluator:
         Requires *every* row: a handful of unordered lists means the property is
         not structural and the correction is genuinely needed.
         """
+
+
         for scores in dataset[self.score_function.name].to_list():
             if scores is None or len(scores) < 2:
                 continue
@@ -416,8 +431,10 @@ class rcpsELEvaluator:
         Either the loss is monotone however the candidates are ordered, or it
         slices the top k but the candidate lists are score-ordered on both splits.
         """
+        ## check for loss functions that are always monotone ## 
         if self.loss_function.monotone_in_threshold:
             return True
+        ## if monotonicity requires that the scores are ordered verify that is the case ## 
         if not self.loss_function.monotone_when_score_ordered:
             return False
         return self.scores_sorted
@@ -483,6 +500,7 @@ class rcpsELEvaluator:
         return empirical_risk, result_validation
 
     def get_q_star(self, verbose: bool = True) -> float:
+        """core procedure of finding score threshold q*"""
         if self.q_star is not None:
             logger.info(f"q star loading from cache...")
             return self.q_star
@@ -493,8 +511,6 @@ class rcpsELEvaluator:
             self.result_calibration_fitted = self.fit_at(
                 q=self.q_star, dataset=self.result_calibration_original
             )
-            ## zero allowed increase and no filtering: the constraint holds with
-            ## probability one, so no confidence bound is needed ##
             self.q_star_certified = True
             self.q_star_risk_ucb = None
             return self.q_star
@@ -503,19 +519,12 @@ class rcpsELEvaluator:
             self.result_calibration_original, calibration=True
         )
         finite_grid = [q for q in self.q_range if q > Q_0]
-
-        ## How much of delta each test may spend.
-        ##
-        ## Monotone loss: the risk is non-decreasing in q, so the thresholds that
-        ## truly violate the constraint form a prefix of the strict-to-loose grid.
-        ## Requiring the certificate to hold at q *and every looser grid point*
-        ## makes the bad event imply a bound failure at one deterministic
-        ## threshold -- the last violating one -- so the whole delta can be spent
-        ## per test. This is the fixed-sequence argument in Bates et al. (2021).
-        ##
-        ## Non-monotone loss: no prefix structure, so that argument does not
-        ## apply and the tests need a Bonferroni correction over the grid.
+        ## verify that the risk function can be treated as monotone ##
         monotone = self.risk_is_monotone()
+        # if not monotone:
+        #     raise RuntimeError(
+        #         "Can not verify that this risk function is monotone. The risk function must either always be monotone or be monotone given candidates are ordered by conformal score"
+        #     )           
         if monotone:
             delta_per_test = self.delta
             why = (
@@ -538,15 +547,12 @@ class rcpsELEvaluator:
             f"n_{self.risk_unit}s={len(base_losses)}."
         )
 
-        ## The unfiltered set always satisfies the constraint with zero risk
-        ## increase, so it needs no certificate and is the safe fallback.
         self.q_star = Q_0
         self.q_star_certified = False
         self.q_star_risk_ucb = None
         self.result_calibration_fitted = self.result_calibration_original
 
         if monotone:
-            ## walk loose -> strict, stop at the first threshold that fails ##
             scan = list(reversed(finite_grid))
         else:
             ## Bonferroni covers every point at once, so take the strictest that
@@ -563,6 +569,7 @@ class rcpsELEvaluator:
         )
         for q in progress:
             fitted = self.fit_at(q=q, dataset=self.result_calibration_original)
+        
             certified, ucb = self.certify(
                 fitted=fitted,
                 base_losses=base_losses,
@@ -581,7 +588,6 @@ class rcpsELEvaluator:
                 self.q_star_risk_ucb = ucb
                 self.result_calibration_fitted = fitted
                 if not monotone:
-                    ## strictest certified threshold found ##
                     break
             else:
                 if monotone:
