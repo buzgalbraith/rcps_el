@@ -56,6 +56,7 @@ class rcpsELSetEvaluator:
         delta: float = 0.1,
         bound: str = "wsr",
         risk_unit: str = "document",
+        derived_hits_at_k: list[int] = [1,2,5,10],
     ) -> None:
         self.evaluators: list[rcpsELEvaluator] = []
         self.benchmarks = benchmarks
@@ -68,6 +69,8 @@ class rcpsELSetEvaluator:
         self.delta = delta
         self.bound = bound
         self.risk_unit = risk_unit
+        ## reporting only, not part of a trial's identity ##
+        self.derived_hits_at_k = derived_hits_at_k
         self.result_set: pl.DataFrame | None = None
         self.results_path = (
             results_path if isinstance(results_path, Path) else Path(DEFAULT_RESULT)
@@ -114,6 +117,7 @@ class rcpsELSetEvaluator:
                 delta=self.delta,
                 bound=self.bound,
                 risk_unit=self.risk_unit,
+                derived_hits_at_k=self.derived_hits_at_k,
             )
             evaluator.execute(verbose=verbose)
             self.evaluators.append(evaluator)
@@ -126,13 +130,19 @@ class rcpsELSetEvaluator:
         assert isinstance(self.result_set, pl.DataFrame)
         write_results = self.result_set
         if self.results_path.exists():
-            existing_results = pl.read_csv(self.results_path, separator="\t")
+            existing_results = pl.read_csv(
+                self.results_path, separator="\t", infer_schema_length=None
+            )
             try:
                 new_rows = self.result_set.join(
                     existing_results, on=self.summary_cols, how="anti"
                 )
-                write_results = existing_results.vstack(new_rows)
-            except pl.exceptions.ShapeError:
+                ## diagonal so optional columns (e.g. derived hits@k) can be added to,
+                ## or missing from, an existing results file; absent values are null ##
+                write_results = pl.concat(
+                    [existing_results, new_rows], how="diagonal_relaxed"
+                )
+            except (pl.exceptions.ShapeError, pl.exceptions.SchemaError):
                 raise ValueError(
                     f"Existing and new dataset schemas do not match. Consider removing existing results at {self.results_path}"
                 )

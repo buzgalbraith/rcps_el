@@ -3,7 +3,7 @@ Class for running RCPS across a given dataset, with a specific score and loss fu
 """
 
 from rcps_el.scores import Scorer
-from rcps_el.losses import lossFunction
+from rcps_el.losses import lossFunction, hitsAtK
 from rcps_el.dataset import Dataset
 from rcps_el.utils import safeMatch
 from rcps_el.bounds import BOUND_METHODS, mean_ucb
@@ -42,6 +42,7 @@ class rcpsELEvaluator:
         delta: float = 0.1,
         bound: str = "wsr",
         risk_unit: str = "document",
+        derived_hits_at_k: list[int] = [1,3,5,10],
     ) -> None:
         """Make an evaluator
         Parameters:
@@ -74,6 +75,14 @@ class rcpsELEvaluator:
                 bounding. "mention" pools mentions, which matches the older
                 reported numbers but overstates the effective sample size and so
                 voids the guarantee under within-document correlation.
+            derived_hits_at_k : optional, list[int]
+                Also report Hits@k (hit rate, pooled over mentions) on the original
+                and the controlled sets for each k, as hits_at_{k}_original /
+                hits_at_{k}_controlled. These are derived metrics: q* is chosen for
+                the loss function only. Because a controlled set is always a top-m
+                prefix of the original ranking, the per-mention drop in Hits@k is at
+                most the increase in exact-code miss-coverage, so the bound carries
+                over when the loss is binary_misscoverage_loss, and not otherwise.
         """
         self.dataset = dataset
         self.score_function = score_function
@@ -93,6 +102,13 @@ class rcpsELEvaluator:
             raise ValueError(
                 f"risk_unit must be 'document' or 'mention'; got {risk_unit!r}."
             )
+        if not all(
+            isinstance(k, int) and k > 0 for k in derived_hits_at_k
+        ):
+            raise ValueError(
+                f"derived_hits_at_k must be positive integers; got {derived_hits_at_k!r}."
+            )
+        self.derived_hits_at_k: list[int] = sorted(set(derived_hits_at_k or []))
         self.delta = float(delta)
         self.bound = bound
         self.risk_unit = risk_unit
@@ -235,6 +251,23 @@ class rcpsELEvaluator:
             "proportional_risk_increase_realised": realised,
         }
 
+    def derived_hits_summary(self, calibration: bool) -> dict:
+        """Hits@k on the original and controlled sets; empty unless derived_hits_at_k is set"""
+        risk_index = (
+            self.calibration_risk_index if calibration else self.validation_risk_index
+        )
+        sets = {
+            "original": self.result_calibration_original if calibration else self.result_validation_original,
+            "controlled": self.result_calibration_fitted if calibration else self.result_validation_fitted,
+        }
+        summary = {}
+        for k in self.derived_hits_at_k:
+            hits = hitsAtK(k)
+            for label, dataset in sets.items():
+                losses = hits.execute(dataset.filter(pl.col("index").is_in(risk_index)))
+                summary[f"hits_at_{k}_{label}"] = 1.0 - float(losses[hits.name].mean())
+        return summary
+
     def get_results_summary(self):
         assert isinstance(self.result_calibration_fitted, pl.DataFrame) and isinstance(
             self.result_validation_fitted, pl.DataFrame
@@ -264,6 +297,7 @@ class rcpsELEvaluator:
                     self.result_calibration_fitted, calibration=True
                 ),
                 **self.guarantee_summary(calibration=True),
+                **self.derived_hits_summary(calibration=True),
             }
         )
         ## get validation results
@@ -290,6 +324,7 @@ class rcpsELEvaluator:
                     self.result_validation_fitted, calibration=False
                 ),
                 **self.guarantee_summary(calibration=False),
+                **self.derived_hits_summary(calibration=False),
             }
         )
         logger.info(f"Calibration samples {len(self.result_calibration_original)}")
@@ -409,14 +444,17 @@ class rcpsELEvaluator:
         numerator alone would ignore that. Instead form the paired per-unit
         quantity
 
-            Z_i = L_i(q) - (1 + alpha) L_i(q0)      in [-(1 + alpha), 1]
+            Z_i = L_i(q) - (1 + alpha) L_i(q0)      in [-alpha, 1]
 
         so the constraint is exactly E[Z] <= 0, a single bounded mean with no
-        random denominator left in it. Rescaling Z onto [0, 1] as
+        random denominator left in it. The lower end is -alpha rather than
+        -(1 + alpha) because the sets are nested: filtering only removes
+        candidates, so L_i(q) >= L_i(q0) for every unit. Rescaling Z onto
+        [0, 1] as
 
-            U_i = (Z_i + 1 + alpha) / (2 + alpha)
+            U_i = (Z_i + alpha) / (1 + alpha)
 
-        turns the constraint into E[U] <= (1 + alpha) / (2 + alpha), which the
+        turns the constraint into E[U] <= alpha / (1 + alpha), which the
         bounds in rcps_el.bounds can certify directly.
 
         Returns (certified, ucb) where ucb is on the E[U] scale.
@@ -434,8 +472,14 @@ class rcpsELEvaluator:
         ## otherwise control relative risk increase ## 
         else:
             z = fitted_losses - (1.0 + alpha) * base_losses
-            u = (z + 1.0 + alpha) / (2.0 + alpha)
-            u_max = (1.0 + alpha) / (2.0 + alpha)
+            ## the tighter range relies on nesting, so fail loudly if it is broken ##
+            if np.any(fitted_losses < base_losses - 1e-12):
+                raise RuntimeError(
+                    "Filtered loss fell below the unfiltered loss for some unit; "
+                    "the sets are not nested, so Z is not bounded below by -alpha."
+                )
+            u = (z + alpha) / (1.0 + alpha)
+            u_max = alpha / (1.0 + alpha)
         ucb = mean_ucb(u, self.delta, method=self.bound)
         return bool(ucb <= u_max), float(ucb)
 
@@ -458,16 +502,7 @@ class rcpsELEvaluator:
         if self.q_star is not None:
             logger.info(f"q star loading from cache...")
             return self.q_star
-        ## check if no risk control should be done ##
-        # if self.target_risk == 0 and self.risk_formulation == 'relative':
-        #     logging.info("Not controlling risk in this case")
-        #     self.q_star = Q_0
-        #     self.result_calibration_fitted = self.fit_at(
-        #         q=self.q_star, dataset=self.result_calibration_original
-        #     )
-        #     self.q_star_certified = False
-        #     self.q_star_risk_ucb = None
-        #     return self.q_star
+
 
         base_losses = self.risk_sample(
             self.result_calibration_original, calibration=True
