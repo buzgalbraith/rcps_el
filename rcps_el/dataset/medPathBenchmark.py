@@ -36,7 +36,7 @@ PROCESSED_SCHEMA = {
 }
 
 
-CORPORA = ("cdr", "ncbi", "cometa")
+CORPORA = ("cdr", "ncbi", "cometa", ) 
 ## max candidate set size we are considering ## 
 MAX_PREDS = 20
 MIN_CANDIDATES = MAX_PREDS
@@ -195,10 +195,26 @@ class medPathBenchmark(Dataset):
     known_methods = ["medpath"]
 
     def __init__(
-        self, seed: int = 100, split_size: float = 0.2, method: str = "medpath", original_dataframe_path: str = None
+        self,
+        seed: int = 100,
+        split_size: float = 0.2,
+        method: str = "medpath",
+        original_dataframe_path: str = None,
+        resplit: bool = False,
     ) -> None:
+        """
+        resplit : optional, bool
+            By default calibrate on the MedPath train split and validate on dev. Those
+            are not exchangeable (the train split carries far more NCBI-disease
+            documents than dev), which the RCPS guarantee requires. With resplit,
+            pool train/dev/test and draw a document-level split_size fraction of each
+            corpus for validation (seeded), so both sets share one distribution.
+        """
         self.seed = seed
         self.split_size = split_size
+        self.resplit = resplit
+        if resplit:
+            self.name = "MedPath_resplit"
         self.method = method.lower().strip()
         assert (
             self.method in self.known_methods
@@ -450,6 +466,41 @@ class medPathBenchmark(Dataset):
         self.calibration_set = pl.read_parquet(self.processed_path("train"))
         self.validation_set = pl.read_parquet(self.processed_path("dev"))
         self.test_set = pl.read_parquet(self.processed_path("test"))
+        if self.resplit:
+            self.calibration_set, self.validation_set = self._stratified_resplit()
+            ## every document is now in calibration or validation ##
+            self.test_set = None
+
+    def _document_corpora(self) -> Dict[str, str]:
+        """document id -> source corpus, read from the raw MedPath documents"""
+        corpora = {}
+        for corpus in CORPORA:
+            for split in SPLIT_MAP:
+                for doc in process_json(MEDPATH_DOCUMENT_DIR.joinpath(f"{corpus}_{split}.jsonl")):
+                    doc_id = str(doc.get("doc_id"))
+                    if corpora.setdefault(doc_id, corpus) != corpus:
+                        raise ValueError(f"document {doc_id} appears in more than one corpus")
+        return corpora
+
+    def _stratified_resplit(self) -> Tuple[pl.DataFrame, pl.DataFrame]:
+        """pool the shipped splits and re-split documents, stratified by corpus"""
+        pooled = pl.concat([self.calibration_set, self.validation_set, self.test_set]).drop("index")
+        if pooled["entity_id"].n_unique() != pooled.height:
+            raise ValueError("entity ids collide across the shipped MedPath splits")
+        corpora = self._document_corpora()
+        documents = (
+            pooled.select("document_id").unique().sort("document_id")
+            .with_columns(corpus=pl.col("document_id").replace_strict(corpora))
+        )
+        validation_ids = []
+        for corpus, docs in documents.group_by("corpus", maintain_order=True):
+            shuffled = docs.sort("document_id").sample(fraction=1.0, shuffle=True, seed=self.seed)
+            validation_ids += shuffled.head(int(self.split_size * shuffled.height))["document_id"].to_list()
+        is_validation = pl.col("document_id").is_in(validation_ids)
+        return (
+            pooled.filter(~is_validation).with_row_index(),
+            pooled.filter(is_validation).with_row_index(),
+        )
 
     def load_dataframe(self, dataframe_path: Path | None = None) -> pl.DataFrame:
         if not dataframe_path:
