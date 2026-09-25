@@ -14,6 +14,25 @@ import logging
 
 logger = logging.getLogger(__name__)
 module = pystow.module("medcoder")
+ 
+## There were some changes between the ICD10 version that was used to generate this data set and what ##
+## is available to me, so used LLMs to get some simple mappings ##
+LABEL_FIXES = {
+    "G35": "G35.D",  # Multiple sclerosis -> MS, unspecified
+    "S16.1A": "S16.1XXA",  # Neck strain
+    "S13.9XA": "S13.9XXA",  # Neck sprain
+    "S33.5A": "S33.5XXA",  # Lumbar spine strain
+    "M1A.90": "M1A.9XX0",  # Gout -> chronic gout, unspecified, without tophus
+    "N25.561": "M25.561",  # Right knee pain
+    "834.11A": "S83.411A",  # Right knee MCL strain
+    "S83.91A": "S83.91XA",  # Right knee sprain
+}
+
+
+def fix_labels(df: pl.DataFrame) -> pl.DataFrame:
+    return df.with_columns(
+        pl.col("obj_synonyms").list.eval(pl.element().replace(LABEL_FIXES))
+    )
 
 
 class medCodERBenchmark(Dataset):
@@ -81,8 +100,8 @@ class medCodERBenchmark(Dataset):
                 df = self._extract_df(json_path)
                 df.write_parquet(output_path)
                 logger.warning(f"{json_path} extracted to {output_path}")
-        self.calibration_set = pl.read_parquet(output_path_map("calibration"))
-        self.validation_set = pl.read_parquet(output_path_map("validation"))
+        self.calibration_set = fix_labels(pl.read_parquet(output_path_map("calibration")))
+        self.validation_set = fix_labels(pl.read_parquet(output_path_map("validation")))
 
     def load_dataframe(self, dataframe_path=None):
         if not dataframe_path:

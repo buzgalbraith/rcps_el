@@ -37,7 +37,6 @@ class BCD5(Dataset):
     def load_dataframe(self, dataframe_path: Path | None = None) -> pl.DataFrame:
         if dataframe_path is None:
             dataframe_path = self.original_dataframe_path
-        print(type(dataframe_path))
         return (
             pl.read_csv(dataframe_path, separator="\t")
             .with_columns(
@@ -74,7 +73,8 @@ class BCD5(Dataset):
         write_path = BCD5_DIR.joinpath(f"processed_{split}_{self.method}.parquet")
         if os.path.exists(write_path):
             logger.info(f"Loading dataset from cache at {write_path}")
-            return pl.read_parquet(write_path)
+            df = pl.read_parquet(write_path)
+            return self._drop_short_circuit_copies(df) if self.method == "krissbert" else df
         if self.method == "gilda":
             df = self.gilda_process(split)
         elif self.method == "krissbert":
@@ -85,28 +85,38 @@ class BCD5(Dataset):
             )
         logger.info(f"Writing results to {write_path}")
         df.write_parquet(write_path)
-        return df
+        return self._drop_short_circuit_copies(df) if self.method == "krissbert" else df
 
-    def krissbert_process(self, split):
+    def _drop_short_circuit_copies(self, df: pl.DataFrame) -> pl.DataFrame:
         """
-        Load krissbert predictions for dataset
+        KRISSBERT can return the same code multiple times, if this happens 
+        just keep the first occurrence. Since the entity is kept in the 
+        candidate set dropping a duplicate will not effect coverage sor
+        hits@k scores as long as we keep the first mention. Done after 
+        initial set size calculation so that all initial sets are cleanly
+        20 candidates.
         """
-        bcd5_data = load_dataset(
-            "bigbio/bc5cdr", split=split if split != "calibration" else "train"
+        list_cols = ["match_curies", "match_names", "match_scores", "short_circuit"]
+
+        def kept_positions(x: dict) -> list[int]:
+            curies, short_circuit = x["match_curies"], x["short_circuit"]
+            exact = {c for c, sc in zip(curies, short_circuit) if sc}
+            keep, dropped = [], set()
+            for i, (curie, sc) in enumerate(zip(curies, short_circuit)):
+                if not sc and curie in exact and curie not in dropped:
+                    dropped.add(curie)
+                    continue
+                keep.append(i)
+            return keep
+
+        keep = pl.struct(["match_curies", "short_circuit"]).map_elements(
+            kept_positions, return_dtype=pl.List(pl.Int64)
         )
-        logger.info(f"extracting {split} data...")
-        load_path = KRISSBERT_DIR.joinpath(f"bc5cdr_{split}.json")
-        bcd5_split = self._load_bcd5_fulltext_split(dataset=bcd5_data)
-        with open(load_path, mode="r") as f:
-            jsn = json.load(f)
-        krissbert_df = self._load_kirssbert_split(jsn)
-        merged_split = krissbert_df.join(
-            bcd5_split,
-            on=["document_id", "text", "offsets"],
-            how="left",
-            validate="1:1",
-        ).with_row_index()
-        return self._krissbert_normalize(merged_dataset=merged_split)
+        return (
+            df.with_columns(_keep=keep)
+            .with_columns([pl.col(c).list.gather(pl.col("_keep")) for c in list_cols])
+            .drop("_keep")
+        )
 
     def gilda_process(self, split):
         """
