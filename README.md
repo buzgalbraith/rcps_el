@@ -4,19 +4,21 @@ RCPS-EL is a modular framework for constructing calibrated candidate sets for bi
 
 ## Overview
 
-Biomedical EL models return ranked candidate lists with no formal guarantee that the correct grounding is among the candidates retained. RCPS-EL calibrates a score threshold $\hat{q}$ on held-out data so that a user-chosen risk is controlled at level $\alpha$ with probability at least $1 - \delta$, while making $\mathbb{E}[|T_q(m)|]$ as small as that constraint allows.
+Biomedical EL models return ranked candidate lists with no formal guarantee that the correct grounding is among the candidates retained. RCPS-EL calibrates a threshold $\hat{\lambda}$ on held-out data so that a user-chosen risk is controlled at level $\alpha$ with probability at least $1 - \delta$, while making $\mathbb{E}[|T_{\hat\lambda}(m)|]$ as small as that constraint allows.
+
+The notation follows the paper and Bates et al. (2021): $T_\lambda(m)$ grows with $\lambda$, and $\lambda_{\max}$ is the uncalibrated set that keeps every retrieved candidate. **The code runs the other direction.** It thresholds on the score, $T_q(m) = \\{c : s(m, c) \ge q\\}$, so a larger $q$ gives a *smaller* set. The two are related by $\lambda = -q$, so the paper's $\inf$ over $\lambda$ is the code's $\sup$ over $q$, $\lambda_{\max}$ is `Q_0 = -inf`, and the reported `q_star` equals $-\hat\lambda$.
 
 Two formulations are available, selected with `risk_formulation`:
 
 **Absolute** — control the risk directly.
 
-$$\hat{q} = \sup\\{q : \hat{R}^{+}(q) \le \alpha\\}$$
+$$\hat{\lambda} = \inf\\{\lambda : \hat{R}^{+}(\lambda') \le \alpha \ \ \forall\, \lambda' \ge \lambda\\}$$
 
-**Relative** (default) — control the *increase* in risk over the model's uncalibrated output $T_{q_0}(m)$.
+**Relative** (default) — control the *increase* in risk over the model's uncalibrated output $T_{\lambda_{\max}}(m)$.
 
-$$\frac{R(q) - R(q_0)}{R(q_0)} \le \alpha$$
+$$\frac{R(\lambda) - R(\lambda_{\max})}{R(\lambda_{\max})} \le \alpha$$
 
-The relative formulation exists because the true label is often absent from the retrieved candidates to begin with. That irreducible risk $R(q_0)$ lower-bounds $R(q)$ for every threshold, so when $R(q_0) > \alpha$ no threshold can satisfy absolute control at all. The relative formulation still narrows sets in that regime, at the cost of a guarantee stated relative to the base model rather than in absolute terms.
+The relative formulation exists because the true label is often absent from the retrieved candidates to begin with. That irreducible risk $R(\lambda_{\max})$ lower-bounds $R(\lambda)$ for every threshold, so when $R(\lambda_{\max}) > \alpha$ no threshold can satisfy absolute control at all. The relative formulation still narrows sets in that regime, at the cost of a guarantee stated relative to the base model rather than in absolute terms.
 
 ### How the guarantee is obtained
 
@@ -24,23 +26,27 @@ The constraint is enforced against a finite-sample **upper confidence bound** on
 
 For the **absolute** formulation the loss is already normalised to $[0,1]$, so the bound applies to it directly.
 
-For the **relative** formulation, $R(q_0)$ is itself estimated on the calibration set, so the constraint has a random right-hand side. Rather than bound the numerator alone, the per-unit paired quantity
+For the **relative** formulation, $R(\lambda_{\max})$ is itself estimated on the calibration set, so the constraint has a random right-hand side. Rather than bound the numerator alone, the per-unit paired quantity
 
-$$Z_i = L_i(q) - (1 + \alpha) L_i(q_0) \in [-(1+\alpha),\, 1]$$
+$$Z_i = L_i(\lambda) - (1 + \alpha) L_i(\lambda_{\max}) \in [-\alpha,\, 1]$$
 
-is formed, making the constraint exactly $\mathbb{E}[Z] \le 0$ — a single bounded mean with no random denominator left in it. $Z$ is rescaled onto $[0,1]$ and bounded with either the Waudby-Smith–Ramdas betting bound (default; variance-adaptive and tightest here) or the Hoeffding–Bentkus bound of Bates et al. (2021).
+is formed, making the constraint exactly $\mathbb{E}[Z] \le 0$ — a single bounded mean with no random denominator left in it. The lower end is $-\alpha$ rather than $-(1+\alpha)$ because the sets are nested: thresholding only removes candidates, so $L_i(\lambda) \ge L_i(\lambda_{\max})$ for every unit (the evaluator raises if this is ever violated). $Z$ is rescaled onto $[0,1]$ as
+
+$$U_i = \frac{Z_i + \alpha}{1 + \alpha}, \qquad \mathbb{E}[Z] \le 0 \iff \mathbb{E}[U] \le \frac{\alpha}{1 + \alpha},$$
+
+and bounded with either the Waudby-Smith–Ramdas betting bound (default; variance-adaptive and tightest here) or the Hoeffding–Bentkus bound of Bates et al. (2021).
 
 Two further details matter for validity:
 
-- **Monotonicity and multiplicity.** RCPS may spend the full $\delta$ at every threshold only when the risk is monotone in $q$, which makes the violating thresholds a suffix of the grid and reduces the bad event to a single deterministic threshold. The evaluator sorts every candidate list into descending score order before computing the loss (`get_original_results`), so `score >= q` always retains a prefix, the top $k$ of a prefix is a prefix of the top $k$, and a top-$k$ loss can only grow as $q$ rises. Monotonicity is therefore structural rather than checked per dataset, and the search is a fixed-sequence procedure: walk from the loosest threshold toward the strictest and stop at the first failure. Continuing past a failure would require a Bonferroni correction.
+- **Monotonicity and multiplicity.** RCPS may spend the full $\delta$ at every threshold only when the risk is monotone in $\lambda$, which makes the violating thresholds a suffix of the grid and reduces the bad event to a single deterministic threshold. The evaluator sorts every candidate list into descending score order before computing the loss (`get_original_results`), so `score >= q` always retains a prefix, the top $k$ of a prefix is a prefix of the top $k$, and a top-$k$ loss can only grow as $\lambda$ falls ($q$ rises). Monotonicity is therefore structural rather than checked per dataset, and the search is a fixed-sequence procedure: walk from the loosest threshold toward the strictest ($\lambda_{\max}$ downward, i.e. ascending $q$ in the code) and stop at the first failure. This is the $\forall\, \lambda' \ge \lambda$ in the definition of $\hat\lambda$. Continuing past a failure would require a Bonferroni correction.
 - **Unit of concentration.** Splits are by document and mentions within a document are correlated, so pooling mentions overstates the effective sample size. `risk_unit` defaults to `"document"`, averaging the loss within each document before bounding. `"mention"` is available but voids the guarantee under within-document correlation.
 
 ### When RCPS-EL declines to narrow
 
 If no threshold can be certified at the requested $\alpha$ and $\delta$, the uncalibrated candidate set is returned — it satisfies the constraint trivially — `q_star_certified` is set to `False`, and a warning is logged. This happens at both ends of the $\alpha$ range, for different reasons:
 
-- **$\alpha$ below the irreducible risk** (absolute formulation only). If $R(q_0) > \alpha$ then $R(q) \ge R(q_0) > \alpha$ for every $q$, so no threshold exists. Use the relative formulation, or raise $\alpha$ above $R(q_0)$.
-- **$\alpha$ near zero** (either formulation). At $q_0$ the margin between the constraint and its boundary is $\alpha R(q_0) / (2 + \alpha)$, which vanishes as $\alpha \to 0$, while the width of the confidence bound does not. Below a dataset-dependent floor the bound cannot detect that the constraint holds even when it holds deterministically. Raising $\delta$ or calibrating on more documents lowers the floor.
+- **$\alpha$ below the irreducible risk** (absolute formulation only). If $R(\lambda_{\max}) > \alpha$ then $R(\lambda) \ge R(\lambda_{\max}) > \alpha$ for every $\lambda$, so no threshold exists. Use the relative formulation, or raise $\alpha$ above $R(\lambda_{\max})$.
+- **$\alpha$ near zero** (either formulation). At $\lambda_{\max}$ the margin between the constraint and its boundary is $\alpha R(\lambda_{\max}) / (1 + \alpha)$ on the $U$ scale, which vanishes as $\alpha \to 0$, while the width of the confidence bound does not. Below a dataset-dependent floor the bound cannot detect that the constraint holds even when it holds deterministically. Raising $\delta$ or calibrating on more documents lowers the floor.
 
 **Always check `q_star_certified` before reading `risk_controlled`.** A declined run reports the uncalibrated risk, which will sit above the target — that is the method abstaining, not a breach of the guarantee.
 
