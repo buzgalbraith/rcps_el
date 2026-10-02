@@ -62,7 +62,20 @@ class rcpsELSetEvaluator:
         bound: str = "wsr",
         risk_unit: str = "document",
         derived_hits_at_k: list[int] = [1,2,5,10],
+        keep_evaluators: bool = False,
+        skip_completed: bool = True,
     ) -> None:
+        """
+        keep_evaluators : optional, bool
+            Hold every finished evaluator in self.evaluators. Each one carries its
+            scored calibration/validation frames, so on a large grid this grows
+            until the process runs out of memory; leave off unless you need them.
+        skip_completed : optional, bool
+            Skip configurations whose results are already in results_path, so an
+            interrupted grid resumes where it stopped.
+        """
+        self.keep_evaluators = keep_evaluators
+        self.skip_completed = skip_completed
         self.evaluators: list[rcpsELEvaluator] = []
         self.benchmarks = benchmarks
         self.scores = scores
@@ -114,6 +127,9 @@ class rcpsELSetEvaluator:
             * len(self.target_risks)
             * len(self.deltas) 
         )
+        completed = self._completed_configs() if self.skip_completed else set()
+        if completed:
+            logger.info(f"{len(completed)} configurations already in {self.results_path}, skipping them")
         records = []
         progress = tqdm(
             itter,
@@ -133,6 +149,13 @@ class rcpsELSetEvaluator:
                 f"alpha={target_risk} delta={delta}"
             )
             progress.set_postfix_str(config)
+            key = self._config_key(
+                dataset.name, split_params["seed"], split_params["split_size"],
+                target_risk, min_candidate, risk_formulation, score.name, loss.name,
+                delta, self.bound, self.risk_unit,
+            )
+            if key in completed:
+                continue
             evaluator = rcpsELEvaluator(
                 dataset=dataset,
                 score_function=score,
@@ -148,7 +171,8 @@ class rcpsELSetEvaluator:
             evaluator.execute(
                 verbose=verbose, progress_position=1, leave_progress=False
             )
-            self.evaluators.append(evaluator)
+            if self.keep_evaluators:
+                self.evaluators.append(evaluator)
             logger.info(
                 f"[{progress.n + 1}/{total}] {config} -> q*={evaluator.q_star:.4g} "
                 f"certified={evaluator.q_star_certified}"
@@ -157,6 +181,29 @@ class rcpsELSetEvaluator:
             ## cache after every trial ##
             self.result_set = pl.from_dicts(records)
             self.safe_write_results()
+
+    ## summary_cols minus "split": a configuration writes one row per split ##
+    config_cols = [c for c in summary_cols if c != "split"]
+
+    @staticmethod
+    def _config_key(*values) -> tuple:
+        """hashable identity of a configuration; numbers normalised so file and grid values compare equal"""
+        return tuple(
+            None if v is None else float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else str(v)
+            for v in (v.item() if hasattr(v, "item") else v for v in values)
+        )
+
+    def _completed_configs(self) -> set[tuple]:
+        """identities of configurations already written to results_path"""
+        if not self.results_path.exists():
+            return set()
+        existing = pl.read_csv(self.results_path, separator="\t", infer_schema_length=None)
+        if any(c not in existing.columns for c in self.config_cols):
+            return set()
+        return {
+            self._config_key(*row)
+            for row in existing.select(self.config_cols).unique().iter_rows()
+        }
 
     def safe_write_results(self):
         assert isinstance(self.result_set, pl.DataFrame)
