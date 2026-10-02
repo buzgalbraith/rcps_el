@@ -15,6 +15,8 @@ from rcps_el.scores import (
     llmScorer,
     MedCodErScorer,
     medPathScorer,
+    retrievalScorer,
+    cumulativeRetrievalScorer,
     Scorer,
 )
 from rcps_el.losses import binaryMisscoverageLoss, hitsAtK, ancestorsAtK, descendantsAtK, hierarchyAtK, lossFunction
@@ -30,14 +32,20 @@ import polars as pl
 
 # BENCHMARKS: list[Dataset] = [BCD5(), bioIDBenchmark(), bioRedBenchmark()]
 # BENCHMARKS: list[Dataset] = [medCodERBenchmark()]
-BENCHMARKS: list[Dataset] = [medPathBenchmark()]
+# BENCHMARKS: list[Dataset] = [medPathBenchmark()]
 # sapbertScorer()
-SCORES: list[Scorer] = [medPathScorer(), fuzzyStringScore()]
+# SCORES: list[Scorer] = [medPathScorer(), fuzzyStringScore()]
+softmax_temp = 0.5
+normalize_score = False
+# SCORES: list[Scorer] = [retrievalScorer(name = 'MedPath Score', normalized_score=normalize_score, softmax_temperature = softmax_temp)]
+# SCORES: list[Scorer] = [cumulativeRetrievalScorer(name = 'MedPath Score', softmax_temperature = softmax_temp)]
+# SCORES: list[Scorer] = [fuzzyStringScore()]
+# SCORES: list[Scorer] = [sapbertScorer()]
 # SCORES: list[Scorer] = [MedCodErScorer()]
 # SCORES: list[Scorer] = [fuzzyStringScore(), gildaScorer(), sapbertScorer()]
 
 # SCORES: list[Scorer] = [llmScorer(batch_size=1)]
-# SCORES: list[Scorer] = [krissbertScorer()]
+# SCORES: list[Scorer] = [krissbertScorer(), fuzzyStringScore()]
 # LOSSES: list[lossFunction] = [binaryMisscoverageLoss(), hitsAtK(k_size=1)]
 # RISK_TYPES = [True, False]
 # MIN_CANDIDATES = [2, 5, 10]
@@ -46,7 +54,9 @@ TARGET_PROPORTIONAL_RISKS = [0.00, 0.01, 0.02, 0.05, 0.10, 0.20, 0.25]
 # TARGET_PROPORTIONAL_RISKS = [0.00, 0.01]
 
 
-RISK_TYPES = [False]
+# RISK_TYPES = ['absolute']
+# RISK_TYPES = ['relative']
+RISK_TYPES = ['relative', 'absolute']
 # LOSSES: list[lossFunction] = [hitsAtK(k_size=5)]
 agg_method = safeMeanAggregator()
 # LOSSES: list[lossFunction] = [ancestorsAtK(k_size=5, agg_method=agg_method)]
@@ -54,7 +64,6 @@ agg_method = safeMeanAggregator()
 k_candidates = True
 LOSSES: list[lossFunction] = [
                                 ancestorsAtK(k_size=1, k_candidates=k_candidates), ancestorsAtK(k_size=3, k_candidates=k_candidates), ancestorsAtK(k_size=5, k_candidates=k_candidates), ancestorsAtK(k_size = 10, k_candidates = k_candidates),
-                                descendantsAtK(k_size=1, k_candidates=k_candidates), descendantsAtK(k_size=3, k_candidates=k_candidates), descendantsAtK(k_size=5, k_candidates=k_candidates), descendantsAtK(k_size = 10, k_candidates = k_candidates),
                                 descendantsAtK(k_size=1, k_candidates=k_candidates), descendantsAtK(k_size=3, k_candidates=k_candidates), descendantsAtK(k_size=5, k_candidates=k_candidates), descendantsAtK(k_size = 10, k_candidates = k_candidates),
                                 hierarchyAtK(k_size=1, k_candidates=k_candidates), hierarchyAtK(k_size=3, k_candidates=k_candidates), hierarchyAtK(k_size=5, k_candidates=k_candidates), hierarchyAtK(k_size = 10, k_candidates = k_candidates),
                                 ]
@@ -68,7 +77,7 @@ LOSSES: list[lossFunction] = [
 # BENCHMARKS: list[Dataset] = [bioIDBenchmark(method='gilda')]
 # BENCHMARKS: list[Dataset] = [bioIDBenchmark(method='gilda')]
 # BENCHMARKS: list[Dataset] = [BCD5(method='gilda')]
-# BENCHMARKS: list[Dataset] = [BCD5(method='krissbert')]
+BENCHMARKS: list[Dataset] = [BCD5(method='krissbert')]
 # SCORES : list[Scorer] = [fuzzyStringScore(), sapbertScorer(), llmScorer()]
 MIN_CANDIDATES = [2]
 
@@ -88,7 +97,7 @@ if __name__ == "__main__":
         df = pl.read_csv("trials.tsv", separator="\t")
     else:
         df = None
-    for dataset, score, loss, risk_type, min_candidate, target_risk in tqdm(
+    for dataset, score, loss, risk_formulation, min_candidate, target_risk in tqdm(
         itter, desc="Running trials"
     ):
         evaluator = rcpsELEvaluator(
@@ -96,8 +105,8 @@ if __name__ == "__main__":
             score_function=score,
             loss_function=loss,
             min_candidates=min_candidate,
-            absolute_risk=risk_type,
-            target_proportional_risk_increase=target_risk,
+            risk_formulation=risk_formulation,
+            target_risk=target_risk,
         )
         evaluator.execute()
 
@@ -124,7 +133,6 @@ if __name__ == "__main__":
         orig_candidates = orig["n_candidates"].to_numpy()
         fitted_candidates = fitted["n_candidates"].to_numpy()
 
-        risk_name = "absolute" if risk_type else "relative"
         loss_type = loss.name
         ## add training information
         records.append(
@@ -134,7 +142,7 @@ if __name__ == "__main__":
                 "score": score.name,
                 "min_candidates": min_candidate,
                 "target_risk": target_risk,
-                "risk_type": risk_name,
+                "risk_type": risk_formulation,
                 "loss_name": loss_type,
                 "aggregation_method" : loss.agg_method.name,
                 "original_risk": original_risk_calibration,
@@ -151,7 +159,7 @@ if __name__ == "__main__":
                 "score": score.name,
                 "min_candidates": min_candidate,
                 "target_risk": target_risk,
-                "risk_type": risk_name,
+                "risk_type": risk_formulation,
                 "loss_name": loss_type,
                 "aggregation_method" : loss.agg_method.name,
                 "original_risk": original_risk_validation,

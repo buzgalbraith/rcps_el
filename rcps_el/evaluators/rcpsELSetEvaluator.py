@@ -24,10 +24,13 @@ DEFAULT_RESULT = RESULTS_BASE.joinpath("rcps_el_results_summary.tsv")
 class rcpsELSetEvaluator:
     ## identity of a trial, used to de-duplicate against cached results. The
     ## risk-control settings belong here: the same dataset/score/loss at a
-    ## different delta or bound is a different trial, not a duplicate.
+    ## different delta or bound is a different trial, not a duplicate. Likewise
+    ## seed/split_size: a different split of the same dataset is a different trial.
     summary_cols = [
         "dataset",
         "split",
+        "seed",
+        "split_size",
         "target_risk",
         "min_candidates",
         "risk_formulation",
@@ -122,8 +125,10 @@ class rcpsELSetEvaluator:
             dynamic_ncols=True,
         )
         for dataset, score, loss, risk_formulation, min_candidate, target_risk, delta in progress:
+            split_params = dataset.split_parameters()
             config = (
-                f"data={dataset.name} score={score.name} loss={loss.name} "
+                f"data={dataset.name} seed={split_params['seed']} "
+                f"score={score.name} loss={loss.name} "
                 f"risk={risk_formulation} min_cand={min_candidate} "
                 f"alpha={target_risk} delta={delta}"
             )
@@ -160,9 +165,11 @@ class rcpsELSetEvaluator:
             existing_results = pl.read_csv(
                 self.results_path, separator="\t", infer_schema_length=None
             )
+            existing_results = self._align_identity_columns(existing_results)
             try:
+                ## nulls_equal so datasets with fixed splits (seed=None) still de-duplicate ##
                 new_rows = self.result_set.join(
-                    existing_results, on=self.summary_cols, how="anti"
+                    existing_results, on=self.summary_cols, how="anti", nulls_equal=True
                 )
                 ## diagonal so optional columns (e.g. derived hits@k) can be added to,
                 ## or missing from, an existing results file; absent values are null ##
@@ -174,3 +181,27 @@ class rcpsELSetEvaluator:
                     f"Existing and new dataset schemas do not match. Consider removing existing results at {self.results_path}"
                 )
         write_results.write_csv(self.results_path, separator="\t")
+
+    def _align_identity_columns(self, existing_results: pl.DataFrame) -> pl.DataFrame:
+        """
+        Make the identity columns of a results file joinable with the new results.
+
+        Files written before an identity column existed (e.g. seed) get it as null,
+        and all-null columns read back as strings are cast to the new dtype.
+        """
+        missing = [c for c in self.summary_cols if c not in existing_results.columns]
+        if missing:
+            logger.warning(
+                f"{self.results_path} has no {missing} columns; treating them as null "
+                "for existing rows, so re-running those trials will add new rows "
+                "rather than being recognised as duplicates."
+            )
+        return existing_results.with_columns(
+            [pl.lit(None).alias(c) for c in missing]
+        ).with_columns(
+            [
+                pl.col(c).cast(self.result_set.schema[c])
+                for c in self.summary_cols
+                if existing_results.schema.get(c, pl.Null) != self.result_set.schema[c]
+            ]
+        )

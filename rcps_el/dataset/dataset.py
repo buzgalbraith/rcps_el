@@ -45,6 +45,16 @@ class Dataset(ABC):
         logger.info("Splitting dataset... ")
         self.validation_set, self.calibration_set = self.split_dataset()
 
+    def split_parameters(self) -> dict:
+        """
+        The seed and split size that produced the calibration/validation split, for
+        recording alongside results. None for datasets with fixed shipped splits.
+        """
+        return {
+            "seed": getattr(self, "seed", None),
+            "split_size": getattr(self, "split_size", None),
+        }
+
     @abstractmethod
     def preprocess_dataset(
         self,

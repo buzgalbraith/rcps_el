@@ -483,6 +483,12 @@ class medPathBenchmark(Dataset):
             self.calibration_set, self.validation_set = self._stratified_resplit()
             ## every document is now in calibration or validation ##
             self.test_set = None
+    def split_parameters(self) -> dict:
+        """seed and split size only matter when resplitting; otherwise the shipped splits are used"""
+        if not self.resplit:
+            return {"seed": None, "split_size": None}
+        return {"seed": self.seed, "split_size": self.split_size}
+
     def _subset_dataframe(self) -> None:
         """Filter dataset to only selected subset"""
         self.calibration_set = self.calibration_set.filter(pl.col('corpus').is_in(self.subset))

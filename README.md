@@ -71,6 +71,20 @@ Both read the `match_scores` column. Further scores can be added by extending `S
 uv sync          # or: pip install -e .
 ```
 
+Some scorers need optional extras:
+
+| Extra | Enables |
+|---|---|
+| `fuzzy` | `fuzzyStringScore` (rapidfuzz) |
+| `sapbert` | `sapbertScorer` (torch, transformers) |
+| `llm` | `llmScorer` (dglink, ollama) |
+| `all` | all of the above |
+
+```bash
+uv sync --extra llm          # or: pip install -e ".[llm]"
+uv sync --all-extras         # or: pip install -e ".[all]"
+```
+
 Requires Python 3.10.
 
 ## Quick start

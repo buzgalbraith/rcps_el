@@ -288,6 +288,7 @@ class rcpsELEvaluator:
             {
                 "dataset": self.dataset.name,
                 "split": "calibration",
+                **self.dataset.split_parameters(),
                 "target_risk": self.target_risk,
                 "min_candidates": self.min_candidates,
                 "risk_formulation" : self.risk_formulation,
@@ -315,6 +316,7 @@ class rcpsELEvaluator:
             {
                 "dataset": self.dataset.name,
                 "split": "validation",
+                **self.dataset.split_parameters(),
                 "target_risk": self.target_risk,
                 "min_candidates": self.min_candidates,
                 "risk_formulation" : self.risk_formulation,

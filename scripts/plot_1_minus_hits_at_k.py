@@ -1,23 +1,29 @@
 import matplotlib.pyplot as plt
 import polars as pl
 
-DATASET_NAME = "BCD5_krissbert"
+# DATASET_NAME = "BCD5_krissbert"
 DATASET_NAME = "MedPath_medpath"
 METRIC = 'Ancestors'
-# METRIC = 'Descendants'
-# METRIC = "Hierarchy"
+METRIC = 'Descendants'
+METRIC = "Hierarchy"
+# METRIC="Hits"
 # DATASET_NAME = 'bioRED'
 # DATASET_NAME = 'BCD5'
 RISK_TYPE = "relative"
+# RISK_TYPE = "absolute"
 MIN_SAMPLES = 2
+CUMULATIVE = True
+# MIN_SAMPLES = 2
+# K_VALUES = [1, 2, 5, 10]
 K_VALUES = [1, 3, 5, 10]
+
 
 
 # MIN_SAMPLES = 20
 # K_VALUES = [1, 2, 5, 10]
 
 SCORES = [
-    ("fuzzy_string_scores", "Fuzzy string score"),
+    # ("fuzzy_string_scores", "Fuzzy string score"),
     # ("SapBERT_scores",      "SapBERT score"),
     ("MedPath Score",      "SapBERT score"),
     # ("KrissBERT_scores",    "KrissBERT score"),
@@ -31,9 +37,8 @@ def plot_k(subfig, k, calibration_res, validation_res, calibration_samples, vali
     axes = subfig.subplots(2, 2)
     cal = calibration_res.filter(pl.col("loss_name").eq(loss))
     val = validation_res.filter(pl.col("loss_name").eq(loss))
-    
+    print(cal)
     risk_targets = cal["target_risk"].unique().sort()
-
     orig_risk_cal  = cal["original_risk"][0]
     orig_risk_val  = val["original_risk"][0]
     orig_c_set_cal = cal["original_c_set_size"][0]
@@ -47,6 +52,10 @@ def plot_k(subfig, k, calibration_res, validation_res, calibration_samples, vali
         (axes[0][1], val, orig_risk_val, validation_samples),
     ):
         for score_col, score_label in SCORES:
+            if CUMULATIVE:
+                score_col = 'Cumulative ' + score_col
+                score_label = 'Cumulative ' + score_label 
+            print(split.filter(pl.col("score").eq(score_col)))
             score_rows = split.filter(pl.col("score").eq(score_col)).sort("target_risk")
             if score_rows.is_empty():
                 continue
@@ -72,6 +81,9 @@ def plot_k(subfig, k, calibration_res, validation_res, calibration_samples, vali
         (axes[1][1], val, orig_c_set_val),
     ):
         for score_col, score_label in SCORES:
+            if CUMULATIVE:
+                score_col = 'Cumulative ' + score_col
+                score_label = 'Cumulative ' + score_label 
             score_rows = split.filter(pl.col("score").eq(score_col)).sort("target_risk")
             if score_rows.is_empty():
                 continue
