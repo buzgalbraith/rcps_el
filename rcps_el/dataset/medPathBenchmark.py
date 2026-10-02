@@ -16,7 +16,7 @@ from typing import Dict, List, Tuple
 import logging
 
 logger = logging.getLogger(__name__)
-module = pystow.module("medpath")
+module = pystow.module("MedPath")
 
 
 SPLIT_MAP = {
@@ -36,7 +36,7 @@ PROCESSED_SCHEMA = {
 }
 
 
-CORPORA = ("cdr", "ncbi", "cometa", ) 
+CORPORA = ("cdr", "ncbi", "cometa", 'medmentions') 
 ## max candidate set size we are considering ## 
 MAX_PREDS = 20
 MIN_CANDIDATES = MAX_PREDS
@@ -201,6 +201,7 @@ class medPathBenchmark(Dataset):
         method: str = "medpath",
         original_dataframe_path: str = None,
         resplit: bool = False,
+        subset: list = None, 
     ) -> None:
         """
         resplit : optional, bool
@@ -209,12 +210,21 @@ class medPathBenchmark(Dataset):
             documents than dev), which the RCPS guarantee requires. With resplit,
             pool train/dev/test and draw a document-level split_size fraction of each
             corpus for validation (seeded), so both sets share one distribution.
+        subset : optional list
+            By default uses all available corpus, but can also use just a subset
         """
         self.seed = seed
         self.split_size = split_size
         self.resplit = resplit
         if resplit:
-            self.name = "MedPath_resplit"
+            logger.info(f"Respiting dataset for better class ballance ")
+            self.name += "_resplit"
+        self.subset = subset or CORPORA
+        assert all(src.lower() in CORPORA for src in self.subset), f"Can not use subset:{self.subset} known corpus are {CORPORA}"
+
+        if subset:
+            logger.info(f"filter for only mentions from {self.subset}")
+            self.name += '_'.join([""] + list(self.subset))
         self.method = method.lower().strip()
         assert (
             self.method in self.known_methods
@@ -322,7 +332,7 @@ class medPathBenchmark(Dataset):
         """gold mentions for a split, keyed by the entity ids the predictions use"""
         docs = []
         for path in sorted(MEDPATH_DOCUMENT_DIR.iterdir()):
-            if path.stem.rsplit("_", 1)[-1] == split and path.stem.startswith(CORPORA): 
+            if path.stem.rsplit("_", 1)[-1] == split and path.stem.startswith(CORPORA):
                 logger.info("loading %s", path)
                 docs += process_json(path)
         if not docs:
@@ -446,8 +456,9 @@ class medPathBenchmark(Dataset):
         )
         if not records:
             raise ValueError(f"no {self.name} rows survived preprocessing for split={split}")
-        return pl.from_records(records, schema=PROCESSED_SCHEMA).with_row_index()
-
+        df = pl.from_records(records, schema=PROCESSED_SCHEMA).with_row_index()
+        corpora = self._document_corpora()
+        return df.with_columns(corpus=pl.col("document_id").replace_strict(corpora))
     def preprocess_dataset(self) -> None:
         """pre-process the dataset
 
@@ -466,11 +477,17 @@ class medPathBenchmark(Dataset):
         self.calibration_set = pl.read_parquet(self.processed_path("train"))
         self.validation_set = pl.read_parquet(self.processed_path("dev"))
         self.test_set = pl.read_parquet(self.processed_path("test"))
+        ## if desired take only certain corpus ##
+        self._subset_dataframe()
         if self.resplit:
             self.calibration_set, self.validation_set = self._stratified_resplit()
             ## every document is now in calibration or validation ##
             self.test_set = None
-
+    def _subset_dataframe(self) -> None:
+        """Filter dataset to only selected subset"""
+        self.calibration_set = self.calibration_set.filter(pl.col('corpus').is_in(self.subset))
+        self.validation_set = self.validation_set.filter(pl.col('corpus').is_in(self.subset))
+        self.test_set = self.test_set.filter(pl.col('corpus').is_in(self.subset))
     def _document_corpora(self) -> Dict[str, str]:
         """document id -> source corpus, read from the raw MedPath documents"""
         corpora = {}

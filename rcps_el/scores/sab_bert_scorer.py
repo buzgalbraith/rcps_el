@@ -46,7 +46,11 @@ class sapbertScorer(Scorer):
         )
         all_names = list(all_names)
         all_embeddings = []
-        for i in tqdm.tqdm(np.arange(0, len(all_names), self.batch_size)):
+        for i in tqdm.tqdm(
+            np.arange(0, len(all_names), self.batch_size),
+            desc="Embedding names",
+            leave=False,
+        ):
             toks = self.tokenizer.batch_encode_plus(
                 all_names[i : i + self.batch_size],
                 padding="max_length",

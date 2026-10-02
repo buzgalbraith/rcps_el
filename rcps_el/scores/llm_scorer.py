@@ -106,7 +106,7 @@ class llmScorer(Scorer):
             if normed in self.cached_groundings:
                 responses.append(self.cached_groundings[normed])
             else:
-                print(f"running LLM for {normed}")
+                tqdm.tqdm.write(f"running LLM for {normed}")
                 new_obs_df = self._call_model([normed])
                 self._update_cache(new_obs_df)
                 responses.append(new_obs_df["probability"][0])
@@ -132,11 +132,15 @@ class llmScorer(Scorer):
             run_list=run_list, evaluation_df=cached_groundings_df
         )
         batch_size = self.batch_size
-        print(f"Starting with {len(missed_list)} terms and batch size {batch_size}")
+        tqdm.tqdm.write(f"Starting with {len(missed_list)} terms and batch size {batch_size}")
         try_count = 0
         while len(missed_list) > 0 and try_count < max_retries:
             batch_size = max(1, batch_size - 1)
-            for i in tqdm.tqdm(range(0, len(missed_list), batch_size)):
+            for i in tqdm.tqdm(
+                range(0, len(missed_list), batch_size),
+                desc="Querying LLM",
+                leave=False,
+            ):
                 to_run = []
                 for x in missed_list[i : i + batch_size]:
                     if check_key(cached_groundings_df, key=x):
@@ -157,7 +161,7 @@ class llmScorer(Scorer):
                 run_list=run_list, evaluation_df=cached_groundings_df
             )
             try_count += 1
-            print(
+            tqdm.tqdm.write(
                 f"missed {len(missed_list)} terms at batch size {batch_size} for try {try_count}"
             )
             cached_groundings_df.write_csv(
@@ -258,7 +262,7 @@ class llmScorer(Scorer):
             call_result.append(item_dict)
             normed = tuple(self.full_norm(item_dict.get(key)) for key in self.key_cols)
             if not (normed) in batch:
-                print(f"Warning {(normed)} is weird...")
+                tqdm.tqdm.write(f"Warning {(normed)} is weird...")
         return pl.from_dicts(call_result, schema=df_schema)
 
     def _check_missed_terms(

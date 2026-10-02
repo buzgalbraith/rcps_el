@@ -2,11 +2,13 @@ from .rcpsELEvaluator import rcpsELEvaluator
 from rcps_el.losses import lossFunction
 from rcps_el.dataset import Dataset
 from rcps_el.scores import Scorer
+from rcps_el.utils import ensure_tqdm_logging
 
 import polars as pl
 
 from itertools import product
 from tqdm import tqdm
+from tqdm.contrib.logging import logging_redirect_tqdm
 from pathlib import Path
 import os
 import logging
@@ -53,7 +55,7 @@ class rcpsELSetEvaluator:
         ],
         risk_formulations: list[str] = ["relative"],
         min_candidates: list[int] = [2],
-        delta: float = 0.1,
+        deltas: list[float] = [0.1],
         bound: str = "wsr",
         risk_unit: str = "document",
         derived_hits_at_k: list[int] = [1,2,5,10],
@@ -66,7 +68,7 @@ class rcpsELSetEvaluator:
         self.min_candidates = min_candidates
         self.target_risks = target_risks
         ## risk-control settings, forwarded to every evaluator ##
-        self.delta = delta
+        self.deltas = deltas
         self.bound = bound
         self.risk_unit = risk_unit
         ## reporting only, not part of a trial's identity ##
@@ -78,6 +80,19 @@ class rcpsELSetEvaluator:
         os.makedirs(self.results_path.parent, exist_ok=True)
 
     def execute(self, verbose: bool = False):
+        """
+        Run every configuration in the grid, checkpointing results after each.
+
+        Progress is shown as one bar over configurations with each evaluator's q*
+        scan nested beneath it and cleared when that configuration finishes. Log
+        records are printed above the bars rather than through them.
+        """
+        ensure_tqdm_logging()
+        ## also covers handlers a caller installed on the root logger (basicConfig) ##
+        with logging_redirect_tqdm():
+            self._execute(verbose=verbose)
+
+    def _execute(self, verbose: bool):
         itter = product(
             self.benchmarks,
             self.scores,
@@ -85,6 +100,7 @@ class rcpsELSetEvaluator:
             self.risk_formulations,
             self.min_candidates,
             self.target_risks,
+            self.deltas
         )
         total = (
             len(self.benchmarks)
@@ -93,20 +109,25 @@ class rcpsELSetEvaluator:
             * len(self.risk_formulations)
             * len(self.min_candidates)
             * len(self.target_risks)
+            * len(self.deltas) 
         )
         records = []
         progress = tqdm(
             itter,
             total=total,
-            desc="Evaluating RCPS entity-linking configurations",
+            desc="RCPS configurations",
             unit="config",
+            position=0,
+            leave=True,
+            dynamic_ncols=True,
         )
-        for dataset, score, loss, risk_formulation, min_candidate, target_risk in progress:
-            progress.set_postfix_str(
+        for dataset, score, loss, risk_formulation, min_candidate, target_risk, delta in progress:
+            config = (
                 f"data={dataset.name} score={score.name} loss={loss.name} "
-                f"risk={risk_formulation} "
-                f"min_cand={min_candidate} target_risk={target_risk}"
+                f"risk={risk_formulation} min_cand={min_candidate} "
+                f"alpha={target_risk} delta={delta}"
             )
+            progress.set_postfix_str(config)
             evaluator = rcpsELEvaluator(
                 dataset=dataset,
                 score_function=score,
@@ -114,13 +135,19 @@ class rcpsELSetEvaluator:
                 min_candidates=min_candidate,
                 risk_formulation=risk_formulation,
                 target_risk=target_risk,
-                delta=self.delta,
+                delta=delta,
                 bound=self.bound,
                 risk_unit=self.risk_unit,
                 derived_hits_at_k=self.derived_hits_at_k,
             )
-            evaluator.execute(verbose=verbose)
+            evaluator.execute(
+                verbose=verbose, progress_position=1, leave_progress=False
+            )
             self.evaluators.append(evaluator)
+            logger.info(
+                f"[{progress.n + 1}/{total}] {config} -> q*={evaluator.q_star:.4g} "
+                f"certified={evaluator.q_star_certified}"
+            )
             records += evaluator.results_summary
             ## cache after every trial ##
             self.result_set = pl.from_dicts(records)

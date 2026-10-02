@@ -149,10 +149,20 @@ class rcpsELEvaluator:
     def execute(
         self,
         verbose: bool = True,
+        progress_position: int | None = None,
+        leave_progress: bool = True,
     ):
-        """Fit and evaluate the model"""
+        """Fit and evaluate the model
+
+        progress_position and leave_progress are passed to the q* progress bar, so
+        a caller with its own bar can stack this one under it and clear it when done.
+        """
         logger.info("Fitting q* on calibration data...")
-        self.get_q_star(verbose=verbose)
+        self.get_q_star(
+            verbose=verbose,
+            progress_position=progress_position,
+            leave_progress=leave_progress,
+        )
         logger.info("Evaluating q* on validation data...")
         self.evaluate_on_validation()
         logger.info("Summary:")
@@ -497,7 +507,12 @@ class rcpsELEvaluator:
         self.result_validation_fitted = result_validation
         return empirical_risk, result_validation
 
-    def get_q_star(self, verbose: bool = True) -> float:
+    def get_q_star(
+        self,
+        verbose: bool = True,
+        progress_position: int | None = None,
+        leave_progress: bool = True,
+    ) -> float:
         """core procedure of finding score threshold q*"""
         if self.q_star is not None:
             logger.info(f"q star loading from cache...")
@@ -530,6 +545,9 @@ class rcpsELEvaluator:
                 f"{self.score_function.name} / {self.loss_function.name}"
             ),
             total=len(scan),
+            unit="q",
+            position=progress_position,
+            leave=leave_progress,
         )
         for q in progress:
             fitted = self.fit_at(q=q, dataset=self.result_calibration_original)
@@ -538,6 +556,7 @@ class rcpsELEvaluator:
                 fitted=fitted,
                 base_losses=base_losses,
             )
+            progress.set_postfix(q=f"{q:.4g}", ucb=f"{ucb:.4g}", certified=certified)
             if verbose:
                 empirical_risk = self.calc_empirical_risk(fitted, calibration=True)
                 logger.info(
@@ -552,6 +571,7 @@ class rcpsELEvaluator:
                 self.result_calibration_fitted = fitted
             else:
                 break
+        progress.close()
 
         if not self.q_star_certified:
             logger.warning(
