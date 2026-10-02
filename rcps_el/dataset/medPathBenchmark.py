@@ -504,10 +504,8 @@ class medPathBenchmark(Dataset):
         pooled = pl.concat([self.calibration_set, self.validation_set, self.test_set]).drop("index")
         if pooled["entity_id"].n_unique() != pooled.height:
             raise ValueError("entity ids collide across the shipped MedPath splits")
-        corpora = self._document_corpora()
         documents = (
-            pooled.select("document_id").unique().sort("document_id")
-            .with_columns(corpus=pl.col("document_id").replace_strict(corpora))
+            pooled.select(["document_id", 'corpus']).unique().sort("document_id")
         )
         validation_ids = []
         for corpus, docs in documents.group_by("corpus", maintain_order=True):

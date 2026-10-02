@@ -8,7 +8,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-MEDPATH_BASE = module("medpath").base
+MEDPATH_BASE = module("MedPath").base
 
 class hierarchicalLossFunction(lossFunction):
     """Loss functions depending on path in some ontology structure"""

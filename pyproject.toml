@@ -23,3 +23,5 @@ dependencies = [
     "dglink @ git+https://github.com/buzgalbraith/dglink.git@b3ee917",
     "pystow>=0.8.19",
 ]
+[tool.uv]
+build-constraint-dependencies = ["setuptools<70"]
