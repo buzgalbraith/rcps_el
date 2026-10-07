@@ -4,16 +4,14 @@ evaluated with https://github.com/thomaslim6793/rag_grounder/tree/main
 """
 
 from .dataset import Dataset, pl, Path
+from rcps_el.utils.constants import MEDCODER_DIR
 
-
-import pystow
 
 import os
 import json
 import logging
 
 logger = logging.getLogger(__name__)
-module = pystow.module("medcoder")
  
 ## There were some changes between the ICD10 version that was used to generate this data set and what ##
 ## is available to me, so used LLMs to get some simple mappings ##
@@ -38,10 +36,10 @@ def fix_labels(df: pl.DataFrame) -> pl.DataFrame:
 class medCodERBenchmark(Dataset):
     name = "MedCodER"
     document_id_column = "doc_id"
-    original_dataframe_path: Path = module.base.joinpath(
+    original_dataframe_path: Path = MEDCODER_DIR.joinpath(
         "retriever_only_ada002_billable_main.jsonl"
     )
-    processed_dataframe_path: Path = module.base.joinpath(
+    processed_dataframe_path: Path = MEDCODER_DIR.joinpath(
         "medcoder_billable_calibration.parquet"
     )
     known_methods = ["medcoder"]
@@ -86,10 +84,10 @@ class medCodERBenchmark(Dataset):
 
     def preprocess_dataset(self):
         split_map = {"main": "calibration", "holdout": "validation"}
-        json_path_map = lambda x: module.base.joinpath(
+        json_path_map = lambda x: MEDCODER_DIR.joinpath(
             f"retriever_only_ada002_billable_{x}.jsonl"
         )
-        output_path_map = lambda x: module.base.joinpath(
+        output_path_map = lambda x: MEDCODER_DIR.joinpath(
             f"medcoder_billable_{x}.parquet"
         )
         for split in split_map:
@@ -107,3 +105,9 @@ class medCodERBenchmark(Dataset):
         if not dataframe_path:
             return self.calibration_set
         return pl.read_parquet(dataframe_path)
+
+class medCodERResplitBenchmark(medCodERBenchmark):
+    def preprocess_dataset(self):
+        path = lambda x: MEDCODER_DIR.joinpath(f"medcoder_resplit_billable_{x}.parquet")
+        self.calibration_set = fix_labels(pl.read_parquet(path("calibration")))
+        self.validation_set = fix_labels(pl.read_parquet(path("validation")))

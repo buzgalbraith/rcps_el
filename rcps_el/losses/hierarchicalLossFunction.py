@@ -1,14 +1,11 @@
 from .lossFunction import lossFunction, pl
 from rcps_el.aggregators import Aggregator, safeMinAggregator
-
-from pystow import module
+from rcps_el.utils.constants import MEDPATH_DIR
 
 import json
 import logging
 
 logger = logging.getLogger(__name__)
-
-MEDPATH_BASE = module("MedPath").base
 
 class hierarchicalLossFunction(lossFunction):
     """Loss functions depending on path in some ontology structure"""
@@ -23,7 +20,7 @@ class hierarchicalLossFunction(lossFunction):
     def _load_path_index(self)->dict:
         """Load and merge all UMLS IDs we have paths for"""
         logger.info("loading path dictionary")
-        paths_path = MEDPATH_BASE.joinpath("hierarchical_paths")
+        paths_path = MEDPATH_DIR.joinpath("hierarchical_paths")
         all_paths = {}
         for onto_paths in paths_path.iterdir():
             with open(onto_paths) as f:

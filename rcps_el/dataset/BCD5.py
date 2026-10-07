@@ -86,7 +86,26 @@ class BCD5(Dataset):
         logger.info(f"Writing results to {write_path}")
         df.write_parquet(write_path)
         return self._drop_short_circuit_copies(df) if self.method == "krissbert" else df
-
+    def krissbert_process(self, split):
+        """
+        Load krissbert predictions for dataset
+        """
+        bcd5_data = load_dataset(
+            "bigbio/bc5cdr", split=split if split != "calibration" else "train"
+        )
+        logger.info(f"extracting {split} data...")
+        load_path = KRISSBERT_DIR.joinpath(f"bc5cdr_{split}.json")
+        bcd5_split = self._load_bcd5_fulltext_split(dataset=bcd5_data)
+        with open(load_path, mode="r") as f:
+            jsn = json.load(f)
+        krissbert_df = self._load_kirssbert_split(jsn)
+        merged_split = krissbert_df.join(
+            bcd5_split,
+            on=["document_id", "text", "offsets"],
+            how="left",
+            validate="1:1",
+        ).with_row_index()
+        return self._krissbert_normalize(merged_dataset=merged_split)
     def _drop_short_circuit_copies(self, df: pl.DataFrame) -> pl.DataFrame:
         """
         KRISSBERT can return the same code multiple times, if this happens 

@@ -47,12 +47,17 @@ class Dataset(ABC):
 
     def split_parameters(self) -> dict:
         """
-        The seed and split size that produced the calibration/validation split, for
-        recording alongside results. None for datasets with fixed shipped splits.
+        The seed and split size that produced the calibration/validation split, the
+        size and seed of any calibration subsample, and any candidate truncation
+        (k_size), for recording alongside results. None for datasets with fixed
+        shipped splits, no subsample or no truncation.
         """
         return {
             "seed": getattr(self, "seed", None),
             "split_size": getattr(self, "split_size", None),
+            "calibration_size": getattr(self, "calibration_size", None),
+            "calibration_seed": getattr(self, "calibration_seed", None),
+            "k_size": getattr(self, "k_size", None),
         }
 
     @abstractmethod

@@ -25,12 +25,16 @@ class rcpsELSetEvaluator:
     ## identity of a trial, used to de-duplicate against cached results. The
     ## risk-control settings belong here: the same dataset/score/loss at a
     ## different delta or bound is a different trial, not a duplicate. Likewise
-    ## seed/split_size: a different split of the same dataset is a different trial.
+    ## seed/split_size: a different split of the same dataset is a different trial,
+    ## and so is a different calibration subsample (calibration_size/calibration_seed)
+    ## or a different candidate truncation (k_size).
     summary_cols = [
         "dataset",
         "split",
         "seed",
         "split_size",
+        "calibration_size",
+        "calibration_seed",
         "target_risk",
         "min_candidates",
         "risk_formulation",
@@ -39,6 +43,7 @@ class rcpsELSetEvaluator:
         "delta",
         "bound",
         "risk_unit",
+        "k_size",
     ]
 
     def __init__(
@@ -144,15 +149,19 @@ class rcpsELSetEvaluator:
             split_params = dataset.split_parameters()
             config = (
                 f"data={dataset.name} seed={split_params['seed']} "
+                f"cal_size={split_params['calibration_size']} cal_seed={split_params['calibration_seed']} "
                 f"score={score.name} loss={loss.name} "
                 f"risk={risk_formulation} min_cand={min_candidate} "
-                f"alpha={target_risk} delta={delta}"
+                f"alpha={target_risk} delta={delta} "
+                f"k_size={split_params['k_size']}"
             )
             progress.set_postfix_str(config)
             key = self._config_key(
                 dataset.name, split_params["seed"], split_params["split_size"],
+                split_params["calibration_size"], split_params["calibration_seed"],
                 target_risk, min_candidate, risk_formulation, score.name, loss.name,
                 delta, self.bound, self.risk_unit,
+                split_params["k_size"],
             )
             if key in completed:
                 continue
@@ -198,8 +207,12 @@ class rcpsELSetEvaluator:
         if not self.results_path.exists():
             return set()
         existing = pl.read_csv(self.results_path, separator="\t", infer_schema_length=None)
-        if any(c not in existing.columns for c in self.config_cols):
-            return set()
+        ## files written before an identity column existed hold only trials where it was
+        ## null (e.g. no calibration subsample), so treat it as null rather than
+        ## discarding the file and re-running everything ##
+        existing = existing.with_columns(
+            [pl.lit(None).alias(c) for c in self.config_cols if c not in existing.columns]
+        )
         return {
             self._config_key(*row)
             for row in existing.select(self.config_cols).unique().iter_rows()
@@ -212,10 +225,21 @@ class rcpsELSetEvaluator:
             existing_results = pl.read_csv(
                 self.results_path, separator="\t", infer_schema_length=None
             )
-            existing_results = self._align_identity_columns(existing_results)
+            ## an identity column that is all null in the new results (e.g. k_size for
+            ## the full candidate list) takes the file's dtype; casting the file's
+            ## values to Null instead would fail ##
+            result_set = self.result_set.with_columns(
+                [
+                    pl.col(c).cast(existing_results.schema[c])
+                    for c in self.summary_cols
+                    if self.result_set.schema[c] == pl.Null
+                    and existing_results.schema.get(c, pl.Null) != pl.Null
+                ]
+            )
+            existing_results = self._align_identity_columns(existing_results, result_set.schema)
             try:
                 ## nulls_equal so datasets with fixed splits (seed=None) still de-duplicate ##
-                new_rows = self.result_set.join(
+                new_rows = result_set.join(
                     existing_results, on=self.summary_cols, how="anti", nulls_equal=True
                 )
                 ## diagonal so optional columns (e.g. derived hits@k) can be added to,
@@ -229,7 +253,7 @@ class rcpsELSetEvaluator:
                 )
         write_results.write_csv(self.results_path, separator="\t")
 
-    def _align_identity_columns(self, existing_results: pl.DataFrame) -> pl.DataFrame:
+    def _align_identity_columns(self, existing_results: pl.DataFrame, schema: pl.Schema) -> pl.DataFrame:
         """
         Make the identity columns of a results file joinable with the new results.
 
@@ -247,8 +271,8 @@ class rcpsELSetEvaluator:
             [pl.lit(None).alias(c) for c in missing]
         ).with_columns(
             [
-                pl.col(c).cast(self.result_set.schema[c])
+                pl.col(c).cast(schema[c])
                 for c in self.summary_cols
-                if existing_results.schema.get(c, pl.Null) != self.result_set.schema[c]
+                if existing_results.schema.get(c, pl.Null) != schema[c]
             ]
         )

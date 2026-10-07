@@ -2,10 +2,9 @@
 MedPath benchmark 
 """
 from .dataset import Dataset, pl, Path
-from rcps_el.utils.constants import MEDPATH_DOCUMENT_DIR, MEDPATH_PATH_FILES
+from rcps_el.utils.constants import MEDPATH_DOCUMENT_DIR, MEDPATH_PATH_FILES, MEDPATH_DIR
 
 
-import pystow
 import datasets
 from bioregistry import normalize_curie
 from indra.databases.mesh_client import get_mesh_tree_numbers
@@ -16,7 +15,6 @@ from typing import Dict, List, Tuple
 import logging
 
 logger = logging.getLogger(__name__)
-module = pystow.module("MedPath")
 
 
 SPLIT_MAP = {
@@ -190,8 +188,8 @@ class medPathBenchmark(Dataset):
 
     name = "MedPath"
     document_id_column = "document_id"
-    original_dataframe_path: Path = module.base.joinpath("raw_predictions", "json")
-    processed_dataframe_path: Path = module.base.joinpath("processed_predictions")
+    original_dataframe_path: Path = MEDPATH_DIR.joinpath("raw_predictions", "json")
+    processed_dataframe_path: Path = MEDPATH_DIR.joinpath("processed_predictions")
     known_methods = ["medpath"]
 
     def __init__(
@@ -201,7 +199,10 @@ class medPathBenchmark(Dataset):
         method: str = "medpath",
         original_dataframe_path: str = None,
         resplit: bool = False,
-        subset: list = None, 
+        subset: list = None,
+        k_size: int = 20, 
+        calibration_size: int | None = None,
+        calibration_seed: int | None = None,
     ) -> None:
         """
         resplit : optional, bool
@@ -212,10 +213,23 @@ class medPathBenchmark(Dataset):
             corpus for validation (seeded), so both sets share one distribution.
         subset : optional list
             By default uses all available corpus, but can also use just a subset
+        k_size: optional int
+            Number of candidates to consider.
+        calibration_size : optional, int
+            Number of calibration documents to keep, for studying how the guarantee
+            behaves with less calibration data. Documents are drawn after the
+            calibration/validation split, so the validation set is untouched and
+            the same for every size. The draw is stratified by corpus and nested:
+            for a fixed calibration_seed, a smaller size is a subset of a larger one.
+            By default the whole calibration split is used.
+        calibration_seed : optional, int
+            Seed for the calibration_size draw; defaults to seed.
         """
         self.seed = seed
         self.split_size = split_size
         self.resplit = resplit
+        self.calibration_size = calibration_size
+        self.calibration_seed = (seed if calibration_seed is None else calibration_seed) if calibration_size else None
         if resplit:
             logger.info(f"Respiting dataset for better class ballance ")
             self.name += "_resplit"
@@ -226,6 +240,9 @@ class medPathBenchmark(Dataset):
             logger.info(f"filter for only mentions from {self.subset}")
             self.name += '_'.join([""] + list(self.subset))
         self.method = method.lower().strip()
+        if k_size < 1 or k_size > 20:
+            raise ValueError(f"K size must be between 1 and 20, you entered {k_size}")
+        self.k_size = k_size
         assert (
             self.method in self.known_methods
         ), f"Method: {self.method} not available known methods for dataset {self.name} are {self.known_methods}"
@@ -268,8 +285,8 @@ class medPathBenchmark(Dataset):
         """build or load UMLS mappings"""
         if getattr(self, "_umls_cache", None) is not None:
             return self._umls_cache
-        xwalk_path = module.base.joinpath("umls", "umls_mesh_xwalk.parquet")
-        name_path = module.base.joinpath("umls", "umls_names.parquet")
+        xwalk_path = MEDPATH_DIR.joinpath("umls", "umls_mesh_xwalk.parquet")
+        name_path = MEDPATH_DIR.joinpath("umls", "umls_names.parquet")
         if xwalk_path.exists() and name_path.exists():
             logger.info("Loading UMLS caches from %s", xwalk_path.parent)
             xwalk = pl.read_parquet(xwalk_path)
@@ -479,21 +496,70 @@ class medPathBenchmark(Dataset):
         self.test_set = pl.read_parquet(self.processed_path("test"))
         ## if desired take only certain corpus ##
         self._subset_dataframe()
+        ## if desired get only top k returned candidates ##
+        self._take_top_k()
         if self.resplit:
             self.calibration_set, self.validation_set = self._stratified_resplit()
             ## every document is now in calibration or validation ##
             self.test_set = None
+        if self.calibration_size:
+            self.calibration_set = self._calibration_subsample()
     def split_parameters(self) -> dict:
         """seed and split size only matter when resplitting; otherwise the shipped splits are used"""
+        ## k_size=20 is the full candidate list, recorded as None so results written
+        ## before k_size was an identity column still match ##
+        calibration = {
+            "calibration_size": self.calibration_size,
+            "calibration_seed": self.calibration_seed,
+            "k_size": None if self.k_size == 20 else self.k_size,
+        }
         if not self.resplit:
-            return {"seed": None, "split_size": None}
-        return {"seed": self.seed, "split_size": self.split_size}
+            return {"seed": None, "split_size": None, **calibration}
+        return {"seed": self.seed, "split_size": self.split_size, **calibration}
+
+    def _calibration_subsample(self) -> pl.DataFrame:
+        """
+        keep calibration_size calibration documents, stratified by corpus and nested across sizes
+
+        Each corpus's documents are shuffled, then all documents are put in one order
+        by their relative position within their corpus, (rank + 0.5) / corpus size.
+        Any prefix of that order holds each corpus in proportion to its share, and
+        since every size takes a prefix of the same order, smaller draws are subsets
+        of larger ones.
+        """
+        documents = self.calibration_set.select("document_id", "corpus").unique().sort("document_id")
+        if self.calibration_size > documents.height:
+            raise ValueError(
+                f"calibration_size={self.calibration_size} but the calibration split has only "
+                f"{documents.height} documents"
+            )
+        ordered = (
+            documents.sample(fraction=1.0, shuffle=True, seed=self.calibration_seed)
+            .with_columns(
+                position=(pl.int_range(pl.len()).over("corpus") + 0.5) / pl.len().over("corpus")
+            )
+            .sort("position", "corpus")
+        )
+        keep = ordered.head(self.calibration_size)["document_id"]
+        return self.calibration_set.filter(pl.col("document_id").is_in(keep)).drop("index").with_row_index()
 
     def _subset_dataframe(self) -> None:
         """Filter dataset to only selected subset"""
         self.calibration_set = self.calibration_set.filter(pl.col('corpus').is_in(self.subset))
         self.validation_set = self.validation_set.filter(pl.col('corpus').is_in(self.subset))
         self.test_set = self.test_set.filter(pl.col('corpus').is_in(self.subset))
+
+    def _top_k_cols(self, df:pl.DataFrame)->pl.DataFrame:
+        return df.with_columns(
+            pl.col('match_names').list.slice(0, self.k_size),
+            pl.col('match_curies').list.slice(0, self.k_size), 
+            pl.col('match_scores').list.slice(0, self.k_size),           
+        )
+
+    def _take_top_k(self)->None:
+        self.calibration_set = self._top_k_cols(self.calibration_set)
+        self.validation_set = self._top_k_cols(self.validation_set)
+        self.test_set = self._top_k_cols(self.test_set)
     def _document_corpora(self) -> Dict[str, str]:
         """document id -> source corpus, read from the raw MedPath documents"""
         corpora = {}

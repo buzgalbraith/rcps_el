@@ -59,11 +59,22 @@ If no threshold can be certified at the requested $\alpha$ and $\delta$, the unc
 
 Both read the `match_scores` column. Further scores can be added by extending `Scorer`.
 
-**Loss functions** (`rcps_el.losses`). `binaryMisscoverageLoss`, `hitsAtK`, and three ontology-aware losses that credit a prediction for landing near the true concept in the hierarchy — `ancestorsAtK`, `descendantsAtK`, `hierarchyAtK`. Extend `lossFunction` to add more.
+**Loss functions** (`rcps_el.losses`). `binaryMisscoverageLoss`, `hitsAtK`, three ontology-aware losses that credit a prediction for landing near the true concept in the hierarchy — `ancestorsAtK`, `descendantsAtK`, `hierarchyAtK` — and `commonAncestorsAtKLoss`, which counts an ICD-10 mention as covered if any candidate shares the first `prefix_len` characters of the gold code (for MedCodER). Extend `lossFunction` to add more.
 
-**Datasets** (`rcps_el.dataset`). `bioIDBenchmark`, `bioRedBenchmark`, `BCD5`, `medCodERBenchmark`, `medPathBenchmark`. Extend `Dataset` to add your own predictions.
+**Datasets** (`rcps_el.dataset`). `bioIDBenchmark`, `bioRedBenchmark`, `BCD5`, `medCodERBenchmark`, `medCodERResplitBenchmark`, `medPathBenchmark`. Extend `Dataset` to add your own predictions.
 
-> **Note on splits.** `bioIDBenchmark` and `bioRedBenchmark` partition documents at random under a seed, so calibration and validation are exchangeable. `medPathBenchmark`, `medCodERBenchmark`, and `BCD5` instead use the benchmark's own curated splits (for MedPath, `train` as calibration and `dev` as validation). Those are not exchangeable — on MedPath the two splits differ in baseline risk by 0.03–0.05 before any calibration runs — so validation numbers from them measure a shifted population rather than verifying the guarantee.
+`medPathBenchmark` takes several options for the ablations in the paper:
+
+| Argument | Effect |
+|---|---|
+| `resplit` | Pool the shipped splits and re-split documents (stratified by corpus, under `seed` / `split_size`) so calibration and validation are exchangeable. |
+| `subset` | Keep only mentions from the listed source corpora. |
+| `k_size` | Truncate each candidate list to its top `k_size` (1–20, default 20). |
+| `calibration_size`, `calibration_seed` | Subsample the calibration split to this many documents, leaving validation unchanged. The draw is stratified by corpus and nested: for a fixed seed, a smaller sample is a subset of a larger one. |
+
+`split_parameters()` reports these settings, and `rcpsELSetEvaluator` treats them as part of a trial's identity, so results that differ only in, say, `k_size` are not de-duplicated against each other.
+
+> **Note on splits.** `bioIDBenchmark` and `bioRedBenchmark` partition documents at random under a seed, so calibration and validation are exchangeable. `medPathBenchmark`, `medCodERBenchmark`, and `BCD5` instead use the benchmark's own curated splits (for MedPath, `train` as calibration and `dev` as validation). Those are not exchangeable — on MedPath the two splits differ in baseline risk by 0.03–0.05 before any calibration runs — so validation numbers from them measure a shifted population rather than verifying the guarantee. Use `medPathBenchmark(resplit=True)` or `medCodERResplitBenchmark` for exchangeable splits.
 
 ## Installation
 
@@ -86,6 +97,14 @@ uv sync --all-extras         # or: pip install -e ".[all]"
 ```
 
 Requires Python 3.10.
+
+### Data location
+
+Dataset files, cached predictions and ontology paths are stored through [pystow](https://github.com/cthoyt/pystow) under `~/.data/rcps_el/` (one subdirectory per dataset: `BioRED/`, `BioIDtraining_2/`, `BCD5/`, `Krissbert/`, `medcoder/`, `medpath/`, `cached_llm_groundings/`). To keep them elsewhere, set `PYSTOW_HOME` before running anything:
+
+```bash
+export PYSTOW_HOME=/path/to/data   # files then live in /path/to/data/rcps_el/
+```
 
 ## Quick start
 
