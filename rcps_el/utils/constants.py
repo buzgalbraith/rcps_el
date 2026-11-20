@@ -30,3 +30,4 @@ MEDPATH_PATH_FILES = [
     Path.joinpath(MEDPATH_PATH_DIR, "NCBI_paths.json"),
 ]
 
+ZESHEL_DIR = module("rcps_el", "zeshel").base

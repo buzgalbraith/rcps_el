@@ -8,7 +8,7 @@ from rcps_el.dataset import Dataset
 from rcps_el.utils import safeMatch
 from rcps_el.bounds import BOUND_METHODS, mean_ucb
 
-from numpy import linspace
+from numpy import linspace, quantile
 import numpy as np
 import polars as pl
 from tqdm import tqdm
@@ -18,6 +18,17 @@ logger = logging.getLogger(__name__)
 
 ## uncalibrated candidate threshold retraining every candidate in the original prediction set ##
 Q_0: float = float("-inf")
+
+## threshold grid types; "linear" is the default and reproduces all earlier results ##
+GRID_TYPES = ("linear", "quantile", "log")
+DEFAULT_GRID: str = "linear"
+DEFAULT_NUM_STEPS: int = 100
+## fixed, data-independent endpoints of the "log" grid (probability-like scores) ##
+LOG_GRID_MIN: float = 1e-8
+LOG_GRID_MAX: float = 1.0
+## scores this far below 0 count as 0 for the "log" grid (floating-point noise, e.g.
+## the cumulative score's 1 - cumsum can give -4e-16) ##
+LOG_GRID_NEG_TOL: float = 1e-12
 
 
 def _or_nan(value: float | None) -> float:
@@ -38,7 +49,8 @@ class rcpsELEvaluator:
         min_candidates: int = 2,
         max_q: int | float | None = None,
         min_q: int | float | None = None,
-        num_steps: int = 100,
+        num_steps: int = DEFAULT_NUM_STEPS,
+        grid: str = DEFAULT_GRID,
         delta: float = 0.1,
         bound: str = "wsr",
         risk_unit: str = "document",
@@ -58,6 +70,24 @@ class rcpsELEvaluator:
                 Endpoints of the threshold grid. Left as None they are derived from
                 the observed range of the score function on the calibration set,
                 since score functions are not all supported on [0, 1].
+            grid : optional, str
+                How the num_steps thresholds are placed between the endpoints.
+                "linear" (default) spaces them evenly. "quantile" places them at
+                evenly spaced quantiles of the pooled calibration candidate scores
+                (clipped to the endpoints), so resolution follows where candidates
+                actually sit. Use it for scores whose mass is packed near one end,
+                such as softmax-normalised similarities (S1) under a sharp
+                temperature, where an even grid jumps from the full set to ~1
+                candidate in a single step. The quantiles use calibration scores
+                only, never labels, the same information the default endpoints use.
+                "log" spaces them evenly on a log scale over a fixed range that does
+                not depend on the calibration data at all ([LOG_GRID_MIN,
+                LOG_GRID_MAX] = [1e-8, 1] unless min_q/max_q are given), so the grid
+                is fixed before calibration as the RCPS argument assumes. It suits
+                the same sharp-softmax scores but needs non-negative scores, so it
+                is not for the rank score or raw similarities that can be negative.
+                At the default temperature (T=0.5) the softmax weights sit in a
+                narrow band that a log grid covers coarsely; prefer "linear" there.
             delta : optional, float
                 The threshold is chosen so the proportional risk constraint holds
                 with probability at least 1 - delta over draws of the calibration
@@ -125,6 +155,12 @@ class rcpsELEvaluator:
         )
 
         ## find range of possible score threshold (q), with granularity based on original risk ##
+        if grid not in GRID_TYPES:
+            raise ValueError(f"grid must be one of {GRID_TYPES}; got {grid!r}.")
+        if isinstance(num_steps, bool) or not isinstance(num_steps, (int, np.integer)) or num_steps < 2:
+            raise ValueError(f"num_steps must be an integer >= 2; got {num_steps!r}.")
+        self.grid = grid
+        self.num_steps = int(num_steps)
         self.q_range = self.build_q_range(
             min_q=min_q, max_q=max_q, num_steps=num_steps
         )
@@ -188,7 +224,11 @@ class rcpsELEvaluator:
         anything, and a grid that stops above the smallest score can never back off
         to the unfiltered set. Q_0 is always appended as the loosest point so
         the fallback is exact even if validation scores undershoot calibration ones.
+
+        The "log" grid instead uses fixed endpoints (see _build_log_q_range).
         """
+        if self.grid == "log":
+            return self._build_log_q_range(min_q=min_q, max_q=max_q, num_steps=num_steps)
         observed = self.observed_score_range(self.result_calibration_original)
         if observed is None:
             logger.warning(
@@ -205,15 +245,72 @@ class rcpsELEvaluator:
                 f"max_q={grid_max} must exceed min_q={grid_min} "
                 f"(observed score range {observed_min} to {observed_max})."
             )
+        if self.grid == "quantile":
+            scores = (
+                self.result_calibration_original[self.score_function.name]
+                .explode()
+                .drop_nulls()
+                .to_numpy()
+                .astype(float)
+            )
+            points = quantile(scores, linspace(0.0, 1.0, num_steps)).clip(grid_min, grid_max)
+        else:
+            points = linspace(start=grid_min, stop=grid_max, num=num_steps)
+        ## de-duplicate: tied quantiles add no new threshold ##
+        finite_grid = sorted({float(q) for q in points}, reverse=True)
         logger.info(
-            f"Threshold grid for {self.score_function.name}: {num_steps} steps over "
-            f"[{grid_min}, {grid_max}] (observed range [{observed_min}, {observed_max}])."
+            f"Threshold grid for {self.score_function.name}: {len(finite_grid)} {self.grid} "
+            f"steps over [{grid_min}, {grid_max}] (observed range [{observed_min}, {observed_max}])."
         )
+        ## return grid as well as our uncalibrated value threshold q_0 ##
+        return finite_grid + [Q_0]
+
+    def _build_log_q_range(
+        self,
+        min_q: int | float | None,
+        max_q: int | float | None,
+        num_steps: int,
+    ) -> list[float]:
+        """
+        Geometrically spaced thresholds over a fixed range, descending, plus Q_0.
+
+        The endpoints are [LOG_GRID_MIN, LOG_GRID_MAX] unless min_q/max_q are given,
+        never the observed scores, so the grid does not depend on the calibration
+        data. The observed range is only checked, to fail loudly on scores the grid
+        cannot act on.
+        """
+        grid_min = LOG_GRID_MIN if min_q is None else float(min_q)
+        grid_max = LOG_GRID_MAX if max_q is None else float(max_q)
+        if not 0.0 < grid_min < grid_max:
+            raise ValueError(
+                f"Log threshold grid for {self.score_function.name} needs "
+                f"0 < min_q < max_q; got min_q={grid_min}, max_q={grid_max}."
+            )
+        observed = self.observed_score_range(self.result_calibration_original)
+        if observed is not None:
+            observed_min, observed_max = observed
+            ## scores at or just below 0 sit below every grid point and are only kept
+            ## at Q_0, exactly like a score of 0; real negatives mean a wrong score type ##
+            if observed_min < -LOG_GRID_NEG_TOL:
+                raise ValueError(
+                    f"grid='log' needs non-negative scores, but {self.score_function.name} "
+                    f"has calibration scores down to {observed_min}. Use grid='linear' "
+                    "for this score (e.g. the rank score or raw similarities)."
+                )
+            if observed_max > grid_max:
+                logger.warning(
+                    f"{self.score_function.name} has calibration scores up to "
+                    f"{observed_max}, above the log grid's max_q={grid_max}; candidates "
+                    "scoring above max_q are kept at every threshold."
+                )
+            logger.info(
+                f"Threshold grid for {self.score_function.name}: {num_steps} log steps over "
+                f"[{grid_min:g}, {grid_max:g}] (observed range [{observed_min}, {observed_max}])."
+            )
         finite_grid = sorted(
-            (float(q) for q in linspace(start=grid_min, stop=grid_max, num=num_steps)),
+            (float(q) for q in np.geomspace(grid_min, grid_max, num=num_steps)),
             reverse=True,
         )
-        ## return grid as well as our uncalibrated value threshold q_0 ## 
         return finite_grid + [Q_0]
 
     def get_risk_index(self, dataset: pl.DataFrame):
@@ -251,6 +348,8 @@ class rcpsELEvaluator:
             "delta": self.delta,
             "bound": self.bound,
             "risk_unit": self.risk_unit,
+            "grid": self.grid,
+            "num_steps": self.num_steps,
             "q_star": self.q_star,
             "q_star_certified": self.q_star_certified,
             "risk_bound_at_q_star": _or_nan(self.q_star_risk_ucb),

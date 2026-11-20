@@ -5,3 +5,4 @@ from .BCD5 import BCD5
 from .medCodERBenchmark import medCodERBenchmark, medCodERResplitBenchmark
 from .medPathBenchmark import medPathBenchmark
 from .medPathNERBenchmark import medPathNERBenchmark
+from .zeshelBenchmark import zeshelBenchmark

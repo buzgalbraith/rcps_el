@@ -1,4 +1,4 @@
-from .rcpsELEvaluator import rcpsELEvaluator
+from .rcpsELEvaluator import rcpsELEvaluator, DEFAULT_GRID, DEFAULT_NUM_STEPS
 from rcps_el.losses import lossFunction
 from rcps_el.dataset import Dataset
 from rcps_el.scores import Scorer
@@ -27,7 +27,8 @@ class rcpsELSetEvaluator:
     ## different delta or bound is a different trial, not a duplicate. Likewise
     ## seed/split_size: a different split of the same dataset is a different trial,
     ## and so is a different calibration subsample (calibration_size/calibration_seed)
-    ## or a different candidate truncation (k_size).
+    ## or a different candidate truncation (k_size), or a different threshold grid
+    ## (grid, num_steps).
     summary_cols = [
         "dataset",
         "split",
@@ -44,7 +45,12 @@ class rcpsELSetEvaluator:
         "bound",
         "risk_unit",
         "k_size",
+        "grid",
+        "num_steps",
     ]
+    ## identity columns added after results files already existed: rows that lack
+    ## them were run with these values, so read them as such rather than as null ##
+    identity_defaults = {"grid": DEFAULT_GRID, "num_steps": DEFAULT_NUM_STEPS}
 
     def __init__(
         self,
@@ -69,8 +75,15 @@ class rcpsELSetEvaluator:
         derived_hits_at_k: list[int] = [1,2,5,10],
         keep_evaluators: bool = False,
         skip_completed: bool = True,
+        grid: str = DEFAULT_GRID,
+        num_steps: int = DEFAULT_NUM_STEPS,
     ) -> None:
         """
+        grid, num_steps : optional
+            Threshold grid forwarded to every rcpsELEvaluator ("linear", "quantile"
+            or "log"; see rcpsELEvaluator). The defaults reproduce earlier results.
+            The grid applies to every score in the run, so use "log" only with
+            non-negative scores.
         keep_evaluators : optional, bool
             Hold every finished evaluator in self.evaluators. Each one carries its
             scored calibration/validation frames, so on a large grid this grows
@@ -92,6 +105,8 @@ class rcpsELSetEvaluator:
         self.deltas = deltas
         self.bound = bound
         self.risk_unit = risk_unit
+        self.grid = grid
+        self.num_steps = num_steps
         ## reporting only, not part of a trial's identity ##
         self.derived_hits_at_k = derived_hits_at_k
         self.result_set: pl.DataFrame | None = None
@@ -153,7 +168,7 @@ class rcpsELSetEvaluator:
                 f"score={score.name} loss={loss.name} "
                 f"risk={risk_formulation} min_cand={min_candidate} "
                 f"alpha={target_risk} delta={delta} "
-                f"k_size={split_params['k_size']}"
+                f"k_size={split_params['k_size']} grid={self.grid}x{self.num_steps}"
             )
             progress.set_postfix_str(config)
             key = self._config_key(
@@ -161,7 +176,7 @@ class rcpsELSetEvaluator:
                 split_params["calibration_size"], split_params["calibration_seed"],
                 target_risk, min_candidate, risk_formulation, score.name, loss.name,
                 delta, self.bound, self.risk_unit,
-                split_params["k_size"],
+                split_params["k_size"], self.grid, self.num_steps,
             )
             if key in completed:
                 continue
@@ -176,6 +191,8 @@ class rcpsELSetEvaluator:
                 bound=self.bound,
                 risk_unit=self.risk_unit,
                 derived_hits_at_k=self.derived_hits_at_k,
+                grid=self.grid,
+                num_steps=self.num_steps,
             )
             evaluator.execute(
                 verbose=verbose, progress_position=1, leave_progress=False
@@ -210,9 +227,13 @@ class rcpsELSetEvaluator:
         ## files written before an identity column existed hold only trials where it was
         ## null (e.g. no calibration subsample), so treat it as null rather than
         ## discarding the file and re-running everything ##
-        existing = existing.with_columns(
-            [pl.lit(None).alias(c) for c in self.config_cols if c not in existing.columns]
-        )
+        existing = self._fill_identity_defaults(existing.with_columns(
+            [
+                pl.lit(self.identity_defaults.get(c)).alias(c)
+                for c in self.config_cols
+                if c not in existing.columns
+            ]
+        ))
         return {
             self._config_key(*row)
             for row in existing.select(self.config_cols).unique().iter_rows()
@@ -261,18 +282,32 @@ class rcpsELSetEvaluator:
         and all-null columns read back as strings are cast to the new dtype.
         """
         missing = [c for c in self.summary_cols if c not in existing_results.columns]
-        if missing:
+        null_missing = [c for c in missing if c not in self.identity_defaults]
+        if null_missing:
             logger.warning(
-                f"{self.results_path} has no {missing} columns; treating them as null "
+                f"{self.results_path} has no {null_missing} columns; treating them as null "
                 "for existing rows, so re-running those trials will add new rows "
                 "rather than being recognised as duplicates."
             )
-        return existing_results.with_columns(
-            [pl.lit(None).alias(c) for c in missing]
-        ).with_columns(
+        return self._fill_identity_defaults(existing_results.with_columns(
+            [pl.lit(self.identity_defaults.get(c)).alias(c) for c in missing]
+        )).with_columns(
             [
                 pl.col(c).cast(schema[c])
                 for c in self.summary_cols
                 if existing_results.schema.get(c, pl.Null) != schema[c]
+            ]
+        )
+
+    def _fill_identity_defaults(self, existing: pl.DataFrame) -> pl.DataFrame:
+        """Rows written before grid/num_steps were recorded hold null there; they used the defaults."""
+        ## cast first: a column that is all null in the file reads back as strings ##
+        return existing.with_columns(
+            [
+                pl.col(c)
+                .cast(pl.Int64 if isinstance(v, int) else pl.String, strict=False)
+                .fill_null(pl.lit(v))
+                for c, v in self.identity_defaults.items()
+                if c in existing.columns
             ]
         )
