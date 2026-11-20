@@ -72,9 +72,8 @@ class rcpsELEvaluator:
                 The unit the concentration bound treats as i.i.d. Splits are by
                 document, and mentions inside one document are correlated, so
                 "document" (default) aggregates to a mean loss per document before
-                bounding. "mention" pools mentions, which matches the older
-                reported numbers but overstates the effective sample size and so
-                voids the guarantee under within-document correlation.
+                bounding. "mention" pools mentions, overstates the effective sample 
+                size and so voids the guarantee under within-document correlation.
             derived_hits_at_k : optional, list[int]
                 Also report Hits@k (hit rate, pooled over mentions) on the original
                 and the controlled sets for each k, as hits_at_{k}_original /

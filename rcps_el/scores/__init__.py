@@ -8,6 +8,7 @@ from .MedCodErScorer import MedCodErScorer
 from .med_path_scorer import medPathScorer
 from .retrievalScorer import retrievalScorer
 from .cumulativeRetrievalScorer import cumulativeRetrievalScorer
+from .rankScorer import rankScorer
 
 if TYPE_CHECKING:
     from .fuzzy_string_scorer import fuzzyStringScore
@@ -29,6 +30,7 @@ __all__ = [
     "medPathScorer",
     "retrievalScorer",
     "cumulativeRetrievalScorer",
+    "rankScorer",
     "fuzzyStringScore",
     "sapbertScorer",
     "llmScorer",

@@ -32,6 +32,10 @@ class retrievalScorer(Scorer):
         """Assume that data frame already contains scores from retrieval method"""   
         if not self.normalized_score:
             return candidates
+        ## a mention with nothing retrieved (e.g. missed by NER) has nothing to
+        ## normalise, and softmax raises on an empty array ##
+        if candidates is None or len(candidates) == 0:
+            return []
         return softmax(np.asarray(candidates, dtype=float) / self.softmax_temperature)
 
 
