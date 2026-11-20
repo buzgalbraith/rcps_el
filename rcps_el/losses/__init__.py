@@ -6,3 +6,4 @@ from .ancestorsAtK import ancestorsAtK
 from .descendantsAtK import descendantsAtK
 from .hierarchyAtK import hierarchyAtK
 from .commonAncestorsAtKLoss import commonAncestorsAtKLoss
+from .hierarchicalRecallLoss import hierarchicalRecallLoss

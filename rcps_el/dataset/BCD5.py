@@ -21,8 +21,10 @@ class BCD5(Dataset):
     name = "BCD5"
     document_id_column = "document_id"
     title_column = "title"
-    known_methods = ["gilda", "krissbert"]
+    known_methods = ["gilda", "krissbert", "sapbert", "tfidf", "bm25"]
     normalization_parameters: tuple[float] | None = None
+    ## retrievers over KRISSBERT's mentions and vocabulary, built by scripts/cdr_retrievers.py ##
+    matched_retrievers = ("sapbert", "tfidf", "bm25")
 
     def __init__(
         self, seed: int = 100, split_size: float = 0.2, method: str = "gilda", original_dataframe_path: str = None
@@ -61,7 +63,8 @@ class BCD5(Dataset):
         logger.info("Loading test set...")
         self.test_set = self.preprocess_split("test")
         ## KrissBert used the training set to train the model so we need to calibrate and evaluate on the validation and test sets
-        if self.method == "krissbert":
+        ## the scripts/cdr_retrievers.py methods reuse the KRISSBERT mentions/splits, so are remapped the same way ##
+        if self.method in ("krissbert", *self.matched_retrievers):
             self.model_train_set = self.calibration_set
             self.calibration_set = self.validation_set
             self.validation_set = self.test_set
@@ -79,6 +82,8 @@ class BCD5(Dataset):
             df = self.gilda_process(split)
         elif self.method == "krissbert":
             df = self.krissbert_process(split)
+        elif self.method in self.matched_retrievers:
+            raise FileNotFoundError(f"{write_path} missing; build it with scripts/cdr_retrievers.py --retriever {self.method}")
         else:
             raise ValueError(
                 f"Method: {self.method} not available known methods for dataset {self.name} are {self.known_methods}"
